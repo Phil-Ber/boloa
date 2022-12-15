@@ -343,7 +343,7 @@ server <- function(input, output, session) {
   					}
   				)
 				}
-				upload_file(count, fileloc, dir, time, input$title, file$name)
+				upload_file(count, fileloc, dir, time, input$title, file$name) #for potential async useage
 				count <- count + 1
 			}
 			shinyjs::alert('Data upload completed.\nSelect samples from the table in order to continue analysis.')
@@ -466,7 +466,6 @@ server <- function(input, output, session) {
 	      for (p in all_params) {
 	        params <- c(params, input[[p]])
 	      }
-	      "Test"
 	      names(params) <- all_params
 	      
 	      #Insert job with status
@@ -479,16 +478,16 @@ server <- function(input, output, session) {
 	      insert_query("parameter", params)
 	      
 	      todf <- data.frame(
-	        sample_hash = toString(hash),
-	        file_path = toString(filepath),
-	        upload_date = toString(timeUF),
-	        sample_name = toString(titleUF),
-	        chromatography_type = toString(chromtype),
-	        original_file_name = toString(filenamesUF[countUF + 1])
+	        job_status = toString(job_status),
+	        start_time = toString(start_time),
+	        job_name = toString(input$job_name)
 	      )
 	      insert_query("job", todf)
 	      #future({metaboanalyst_data_processing(jobfiles, params, preset)}, packages = c("MetaboAnalystR", "OptiLCMS"))
-	      metaboanalyst_data_processing(jobfiles, params, preset) #Non async!!!
+	      mSet <- metaboanalyst_data_processing(jobfiles, params, preset) #Non async!!!
+	      dir <- getwd()
+	      dir <- paste(dir, "/msets", sep = "")
+	      saveRDS(mSet, paste(dir, "T1", ".rds", sep = ""))
 	      shinyjs::alert(paste("Job: ", input$job_name, ' is running. Check progress in the "Jobs" tab.', sep = ""))
 	    }
 	  }
@@ -518,7 +517,7 @@ server <- function(input, output, session) {
 	  }
 	  rawData <- ImportRawMSData(path = massfiles$file_path, plotSettings = SetPlotParam(Plot=FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
 	  mSet <- PerformPeakProfiling(rawData,def_params, plotSettings = SetPlotParam(Plot = FALSE))
-	  saveRDS(mSet, paste("T1", ".rds", sep = ""))
+	  return(mSet)
 	}
 
 }

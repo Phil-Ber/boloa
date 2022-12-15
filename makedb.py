@@ -55,7 +55,7 @@ def make_job():
 def make_parameter():
 	cur.execute("DROP TABLE IF EXISTS parameter;")
 	cur.execute("CREATE TABLE parameter ("
-		"param_id INT AUTO_INCREMENT PRIMARY KEY, "
+		"job_id INT PRIMARY KEY, "
 		"sample_type FLOAT, "
 		"min_peakwidth FLOAT, "
 		"max_peakwidth FLOAT, "
@@ -85,7 +85,8 @@ def make_parameter():
 		"max_iso FLOAT, "
 		"corr_eic_th FLOAT, "
 		"mz_abs_add FLOAT, "
-		"rmconts TINYINT"
+		"rmconts TINYINT, "
+		"FOREIGN KEY (job_id) REFERENCES job(job_id)"
 		");"
 	)
 	print("Parameter table created...")
