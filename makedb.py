@@ -23,9 +23,9 @@ except:
 	cur = mydb.cursor()
 	cur.execute("CREATE DATABASE boloa")
 
-def make_samples():
-	cur.execute("DROP TABLE IF EXISTS samples;")
-	cur.execute("CREATE TABLE samples ("
+def make_sample():
+	cur.execute("DROP TABLE IF EXISTS sample;")
+	cur.execute("CREATE TABLE sample ("
 			"sample_hash VARCHAR(100) PRIMARY KEY, "
 			"file_path VARCHAR(400), "
 			"upload_date DATETIME, "
@@ -34,26 +34,27 @@ def make_samples():
 			"original_file_name VARCHAR(400)"
 		");"
 	)
+	print("Sample table created...")
 
 
-def make_jobs():
-	cur.execute("DROP TABLE IF EXISTS jobs;")
-	cur.execute("CREATE TABLE jobs ("
+def make_job():
+	cur.execute("DROP TABLE IF EXISTS job;")
+	cur.execute("CREATE TABLE job ("
 		"job_id INT AUTO_INCREMENT PRIMARY KEY, "
-		"sample_hash VARCHAR(100), "
 		"param_id INT, "
 		"job_status VARCHAR(10), "
-		"FOREIGN KEY (sample_hash)"
-		"	REFERENCES samples(sample_hash),"
+		"start_time DATETIME, "
+		"job_name VARCHAR(100), "
 		"FOREIGN KEY (param_id)"
                 "       REFERENCES parameters(param_id)"
 
 		");"
 	)
+	print("Job table created...")
 
-def make_parameters():
-	cur.execute("DROP TABLE IF EXISTS parameters;")
-	cur.execute("CREATE TABLE parameters ("
+def make_parameter():
+	cur.execute("DROP TABLE IF EXISTS parameter;")
+	cur.execute("CREATE TABLE parameter ("
 		"param_id INT AUTO_INCREMENT PRIMARY KEY, "
 		"sample_type FLOAT, "
 		"min_peakwidth FLOAT, "
@@ -87,13 +88,40 @@ def make_parameters():
 		"rmconts TINYINT"
 		");"
 	)
+	print("Parameter table created...")
+	
+def make_processed_sample():
+	cur.execute("DROP TABLE IF EXISTS processed_sample;")
+	cur.execute("CREATE TABLE processed_sample ("
+      "job_id INT PRIMARY KEY, "
+      "file_path VARCHAR(100), "
+      "FOREIGN KEY (job_id) REFERENCES job(job_id)"
+    ");"
+	)
+	print("Processed sample table created...")
+
+def make_sample_job():
+  cur.execute("DROP TABLE IF EXISTS sample_job;")
+  cur.execute("CREATE TABLE sample_job ("
+      "job_id INT, "
+      "sample_hash VARCHAR(100), "
+      "sample_number INT, "
+      "PRIMARY KEY(job_id, sample_hash), "
+      "FOREIGN KEY(job_id) REFERENCES job(job_id), "
+      "FOREIGN KEY(sample_hash) REFERENCES sample(sample_hash)"
+    ");"
+  )
+  print("Sample job table created...")
+
 cur.execute("SET GLOBAL local_infile=1;")
 cur.execute("SET FOREIGN_KEY_CHECKS=0;")
 import os
 dir_path = os.path.dirname(os.path.realpath(__file__))
 bash_remove = f"rm {dir_path}/massascans/*.mzXML"
 os.system(bash_remove)
-make_samples()
-make_parameters()
-make_jobs()
+make_sample()
+make_parameter()
+make_job()
+make_processed_sample()
+make_sample_job()
 cur.execute("SET FOREIGN_KEY_CHECKS=1;")
