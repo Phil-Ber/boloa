@@ -457,11 +457,6 @@ server <- function(input, output, session) {
 	  })
 	  if (nchar(input$job_name) != 0) {
 	    if (length(selsamples$sample_hash) >= 3) {
-	      jobfiles <- NULL
-	      for (hash in selsamples$sample_hash) {
-	        query <- stringr::str_glue("SELECT * FROM samples WHERE sample_hash = '", hash, "';")
-	        jobfiles <- rbind(jobfiles, get_query(query))
-	      }
 	      params <- c()
 	      for (p in all_params) {
 	        params <- c(params, input[[p]])
@@ -473,22 +468,52 @@ server <- function(input, output, session) {
 	      start_time <- format(Sys.time(), "%Y-%m-%d %X")
 	      job_status <- "Running..."
 	      preset <- input$preset
-	      
-	      params <- as.data.frame(t(params))
-	      insert_query("parameter", params)
-	      
 	      todf <- data.frame(
 	        job_status = toString(job_status),
 	        start_time = toString(start_time),
 	        job_name = toString(input$job_name)
 	      )
+	      print(todf)
 	      insert_query("job", todf)
+	      
+	      query <- stringr::str_glue("SELECT job_id FROM job ORDER BY job_id DESC LIMIT 1;")
+	      job_id <- get_query(query)
+	      params <- c(params, job_id=job_id)
+	      print("params")
+	      
+	      params_insert <- do.call(rbind, params) %>% as.data.frame() %>% t()
+	      params <- as.data.frame(t(params))
+	      print(params_insert)
+	      print(typeof(params_insert))
+	      insert_query("parameter", params_insert)
+	      
+	      jobfiles <- NULL
+	      sample_number <- 1
+	      for (hash in selsamples$sample_hash) {
+	        query <- stringr::str_glue("SELECT * FROM sample WHERE sample_hash = '", hash, "';")
+	        jobfiles <- rbind(jobfiles, get_query(query))
+	        todf <- data.frame(
+	          job_id = toString(job_id),
+	          sample_hash = toString(hash),
+	          sample_number = toString(sample_number)
+	        )
+	        insert_query("sample_job", todf)
+	        sample_number <- sample_number + 1
+	      }
+	      
 	      #future({metaboanalyst_data_processing(jobfiles, params, preset)}, packages = c("MetaboAnalystR", "OptiLCMS"))
+	      shinyjs::alert(paste("Job: ", input$job_name, ' is running. Check progress in the "Jobs" tab.', sep = ""))
 	      mSet <- metaboanalyst_data_processing(jobfiles, params, preset) #Non async!!!
 	      dir <- getwd()
-	      dir <- paste(dir, "/msets", sep = "")
-	      saveRDS(mSet, paste(dir, "T1", ".rds", sep = ""))
-	      shinyjs::alert(paste("Job: ", input$job_name, ' is running. Check progress in the "Jobs" tab.', sep = ""))
+	      dir <- paste(dir, "/msets/", sep = "")
+	      
+	      
+	      saveRDS(mSet, paste(dir, job_id, ".rds", sep = ""))
+	      todf <- data.frame(
+	        job_id = toString(job_id),
+	        file_path = toString(paste(dir, job_id, ".rds", sep = ""))
+	      )
+	      insert_query("processed_sample", todf)
 	    }
 	  }
 	})
