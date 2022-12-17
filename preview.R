@@ -59,6 +59,19 @@ get_query <- function(query){
 	dbGetQuery(sqlconn, query)
 }
 
+send_query <- function(quert){
+  sqlconn <- dbConnect(
+    drv = RMySQL::MySQL(),
+    dbname='boloa',
+    host="127.0.0.1",
+    port=3306,
+    user=db_usr,
+    password=db_pwd
+  )
+  on.exit(dbDisconnect(sqlconn))
+  dbSendQuery(sqlconn, query)
+}
+
 insert_query <- function(tb_name, data){
 	sqlconn <- dbConnect(
 		drv = RMySQL::MySQL(),
@@ -76,7 +89,7 @@ plan(multisession)
 
 options(shiny.maxRequestSize=10000*1024^2)
 hostip <- "145.97.18.149"
-portnr <- 7002
+portnr <- 7123
 
 all_params <- c("min_peakwidth", "max_peakwidth", "mzdiff", "snthresh", "bw", "peak_method", "rt_method", "ppm", "noise", "prefilter", "value_of_prefilter", "minfraction", "minsamples", "maxfeatures", "fitgauss", "mzcenterfun", "integrate", "extra", "span", "smooth", "family", "verbose_cols", "polarity", "perc_fwhm", "mz_abs_iso", "max_charge", "max_iso", "corr_eic_th", "mz_abs_add", "rmconts")
 lcms_only <- tail(all_params, n=9)
@@ -182,7 +195,10 @@ ui <- fluidPage(
 					column(4)
 				)
 			),
-			tabPanel("Jobs",  icon = icon("arrow-right")),
+			tabPanel("Jobs",  icon = icon("arrow-right"),
+			  fluidRow(h4("Select a job to analyse contents:"),
+			           DT::dataTableOutput("jobs"))
+			),
 			tabPanel("Analysis",  icon = icon("arrow-right"))
 		)
 	)
@@ -207,7 +223,7 @@ server <- function(input, output, session) {
 		list(input$tabSwitch, input$dataupl)
 	})
 	observeEvent(sample_table, {
-		query <- stringr::str_glue("SELECT upload_date, original_file_name, sample_hash, sample_name, chromatography_type FROM samples ORDER BY upload_date DESC;")
+		query <- stringr::str_glue("SELECT upload_date, original_file_name, sample_hash, sample_name, chromatography_type FROM sample ORDER BY upload_date DESC;")
 		sample_table_content <<- get_query(query)
 		sample_table_content$chromatography_type[sample_table_content$chromatography_type == 1] <- "Liquid"
 		sample_table_content$chromatography_type[sample_table_content$chromatography_type == 2] <- "Gas"
@@ -222,7 +238,7 @@ server <- function(input, output, session) {
 	  on.exit(progress$close())
 	  progress$set(message = "Preview", value = 0)
 		preview_file <- selsamples[input$selected_samples_rows_selected, ]$sample_hash
-		query <- stringr::str_glue("SELECT file_path FROM samples WHERE sample_hash = '", preview_file, "';")
+		query <- stringr::str_glue("SELECT file_path FROM sample WHERE sample_hash = '", preview_file, "';")
 		progress$inc(1/4, detail = "Opening MS-file")
 		aa <- openMSfile(get_query(query)$file_path)
 		on.exit(close(aa))
@@ -235,27 +251,14 @@ server <- function(input, output, session) {
 		mzres <- (mzhigh - mzlow) / 50
 		progress$inc(1/4, detail = "Making MSmap object")
 		M <- MSmap(aa, ms1[rtsel], lowMz=mzlow, highMz=mzhigh, resMz=mzres, aahead, zeroIsNA = TRUE)
-		# y <- aahead$totIonCurrent
-		# x <- aahead$retentionTime
 		close(aa)
-		#progress$inc(1/5, detail = "Rendering slider")
-		# output$chromrange <- renderUI({
-		# 	sliderInput("chromrange", "Retention time range:", min = min(x), max = max(x), value = c(min(x), max(x)))
-		# })
 		#Render 3d plot
 		output$previewplot <- renderUI({
 			open3d()
-		  #plot_ly(z = ~M)
-		  progress$inc(1/4, detail = "Rendering 3D plot")
 			plot3D(M, rgl = TRUE)#xlim = input$chromrange, ylim = input$mzrange, xlab = "Retention time (seconds)", ylab = "M/Z", zlab = "Intensity")
 			rglwidget()
 		  
 		})
-		# #Render TIC
-		# output$ticplot <- renderPlot({
-		#   progress$inc(1/6, detail = "Rendering TIC plot")
-		# 	plot(x, y, xlab = "Retention time (seconds)", ylab = "TotIonCurrent", xlim = input$chromrange, type="h")
-		# })
 		progress$close()
 	})
 	
@@ -329,7 +332,7 @@ server <- function(input, output, session) {
   						    chromatography_type = toString(chromtype),
   						    original_file_name = toString(filenamesUF[countUF + 1])
   						  )
-  						  insert_query("samples", todf)
+  						  insert_query("sample", todf)
   						}
   					},
   					error = function(cnd){
@@ -340,7 +343,7 @@ server <- function(input, output, session) {
   					}
   				)
 				}
-				upload_file(count, fileloc, dir, time, input$title, file$name)
+				upload_file(count, fileloc, dir, time, input$title, file$name) #for potential async useage
 				count <- count + 1
 			}
 			shinyjs::alert('Data upload completed.\nSelect samples from the table in order to continue analysis.')
@@ -411,7 +414,7 @@ server <- function(input, output, session) {
 		}
 		else {
 		  preview_file <- selsamples[input$selected_samples_rows_selected, ]$sample_hash
-		  query <- stringr::str_glue("SELECT file_path FROM samples WHERE sample_hash = '", preview_file, "';")
+		  query <- stringr::str_glue("SELECT file_path FROM sample WHERE sample_hash = '", preview_file, "';")
 		  aa <- openMSfile(get_query(query)$file_path)
 		  on.exit(close(aa))
 		  aahead <- header(aa)
@@ -454,11 +457,6 @@ server <- function(input, output, session) {
 	  })
 	  if (nchar(input$job_name) != 0) {
 	    if (length(selsamples$sample_hash) >= 3) {
-	      jobfiles <- NULL
-	      for (hash in selsamples$sample_hash) {
-	        query <- stringr::str_glue("SELECT * FROM samples WHERE sample_hash = '", hash, "';")
-	        jobfiles <- rbind(jobfiles, get_query(query))
-	      }
 	      params <- c()
 	      for (p in all_params) {
 	        params <- c(params, input[[p]])
@@ -467,18 +465,60 @@ server <- function(input, output, session) {
 	      
 	      #Insert job with status
 	      params <- c(params, sample_type=input$datatype)
-	      unique_job_id <- "TIME+ID HASH"
-	      job_time <- format(Sys.time(), "%Y-%m-%d %X")
-	      metaboanalyst_data_processing(jobfiles, params)
+	      start_time <- format(Sys.time(), "%Y-%m-%d %X")
+	      job_status <- "Running..."
+	      preset <- input$preset
+	      todf <- data.frame(
+	        job_status = toString(job_status),
+	        start_time = toString(start_time),
+	        job_name = toString(input$job_name)
+	      )
+	      insert_query("job", todf)
+	      
+	      query <- stringr::str_glue("SELECT job_id FROM job ORDER BY job_id DESC LIMIT 1;")
+	      job_id <- get_query(query)
+	      params <- c(params, job_id=job_id)
+	      
+	      params_insert <- do.call(rbind, params) %>% as.data.frame() %>% t() %>% as.data.frame()
+	      names(params_insert)[names(params_insert) == 'job_id.job_id'] <- 'job_id'
+	      insert_query("parameter", params_insert)
+	      
+	      jobfiles <- NULL
+	      sample_number <- 1
+	      for (hash in selsamples$sample_hash) {
+	        query <- stringr::str_glue("SELECT * FROM sample WHERE sample_hash = '", hash, "';")
+	        jobfiles <- rbind(jobfiles, get_query(query))
+	        todf <- data.frame(
+	          job_id = toString(job_id),
+	          sample_hash = toString(hash),
+	          sample_number = toString(sample_number)
+	        )
+	        insert_query("sample_job", todf)
+	        sample_number <- sample_number + 1
+	      }
+	      
+	      #future({metaboanalyst_data_processing(jobfiles, params, preset)}, packages = c("MetaboAnalystR", "OptiLCMS"))
+	      shinyjs::alert(paste("Job: ", input$job_name, ' is running. Check progress in the "Jobs" tab.', sep = ""))
+	      mSet <- metaboanalyst_data_processing(jobfiles, params, preset) #Non async!!!
+	      dir <- getwd()
+	      dir <- paste(dir, "/msets/", sep = "")
+	      
+	      
+	      saveRDS(mSet, paste(dir, job_id, ".rds", sep = ""))
+	      todf <- data.frame(
+	        job_id = toString(job_id),
+	        file_path = toString(paste(dir, job_id, ".rds", sep = ""))
+	      )
+	      insert_query("processed_sample", todf)
 	    }
 	  }
 	})
 	
 	
 	#Function to process the selected MS-files
-	metaboanalyst_data_processing <- function(massfiles, parameters){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
-	  param_initial <- SetPeakParam(platform = "general")
-	  if (input$preset == 3) {
+	metaboanalyst_data_processing <- function(massfiles, parameters, preset){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
+	  #preset <- 3 # !!! CUSTOM PARAMETERS ARE NONFUNCTIONAL, AUTOMATIC HARDCODED. REMOVE WHEN FUNCTIONAL !!!
+	  if (preset == 3) {
 	    param_initial <- SetPeakParam(platform = "general")
 	    raw_train <- PerformROIExtraction(massfiles$file_path, rt.idx = 0.2, rmConts = FALSE)
 	    def_params <- PerformParamsOptimization(raw_train, param = param_initial, ncore = 5)
@@ -486,24 +526,21 @@ server <- function(input, output, session) {
 	  else {
 	    #fwhm = parameters$fwhm, steps= parameters$steps, peakBinSize = parameters$peakbinsize, criticalValue = parameters$criticalvalue, consecMissedLimit = parameters$consecmissedlimit, unions = parameters$unions, checkBack = parameters$checkback, withWave = parameters$withwave, profStep = parameters$profstep,
 	    #print(t(parameters))
-	    parameters <- as.data.frame(t(parameters))
 	    parameters[is.na(parameters)] <- 0
-	    parameters$peak_method <- c("CentWave", "Massifquant", "MatchedFilter")[strtoi(parameters$peak_method) + 1]
+	    parameters$peak_method <- c("centWave", "massifquant", "matchedFilter")[strtoi(parameters$peak_method) + 1]
 	    parameters$rt_method <- c("loess", "obiwarp")[strtoi(parameters$rt_method) + 1]
 	    parameters$mzcenterfun <- c("wMean", "mean", "apex", "wMeanApex3", "meanApex3")[strtoi(parameters$mzcenterfun) + 1]
-	    parameters$smooth <- c("Loess", "Linear")[strtoi(parameters$smooth) + 1]
+	    parameters$smooth <- c("loess", "linear")[strtoi(parameters$smooth) + 1]
 	    parameters$family <- c("gaussian", "symmetric")[strtoi(parameters$family) + 1]
 	    parameters$polarity <- c("negative", "positive")[strtoi(parameters$polarity) + 1]
-	    def_params <- SetPeakParam(platform = "general", Peak_method = parameters$peak_method, RT_method = parameters$rt_method, mzdiff = parameters$mzdiff, snthresh = parameters$snthresh, bw = parameters$bw, ppm = parameters$ppm, min_peakwidth = parameters$min_peakwidth, max_peakwidth = parameters$max_peakwidth, noise = parameters$noise, prefilter = parameters$prefilter, value_of_prefilter = parameters$value_of_prefilter, minFraction = parameters$minfraction, minSamples = parameters$minsamples, maxFeatures = parameters$maxfeatures, mzCenterFun = parameters$mzcenterfun, integrate = parameters$integrate, extra = parameters$extra, span = parameters$span, smooth = parameters$smooth, family = parameters$family, fitgauss = parameters$fitgauss, polarity = parameters$polarity, perc_fwhm = parameters$perc_fwhm, mz_abs_iso = parameters$mz_abs_iso, max_charge = parameters$max_charge, max_iso = parameters$max_iso, corr_eic_th = parameters$corr_eic_th, mz_abs_add = parameters$mz_abs_add, adducts = parameters$adducts, rmConts = parameters$rmconts)
+	    print(parameters)
+	    def_params <- SetPeakParam(platform = "general", Peak_method = parameters$peak_method, RT_method = parameters$rt_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minfraction), minSamples = as.double(parameters$minsamples), maxFeatures = as.double(parameters$maxfeatures), mzCenterFun = parameters$mzcenterfun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmconts) #verboseColumns
 	  }
-	  print(def_params)
-	  q()
-	  rawData <- ImportRawMSData(path = massfiles$file_path, plotSettings = SetPlotParam(Plot=FALSE))
+	  rawData <- ImportRawMSData(path = massfiles$file_path, plotSettings = SetPlotParam(Plot=FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
 	  mSet <- PerformPeakProfiling(rawData,def_params, plotSettings = SetPlotParam(Plot = FALSE))
-	  print(def_params)
-	  print(mSet)
+	  return(mSet)
 	}
-}
 
+}
 
 runApp(shinyApp(ui = ui, server = server), host = hostip, port = portnr)
