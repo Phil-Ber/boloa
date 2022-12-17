@@ -86,6 +86,7 @@ def make_parameter():
 		"corr_eic_th FLOAT, "
 		"mz_abs_add FLOAT, "
 		"rmconts TINYINT, "
+		"rt_method INT, " #NEW!!
 		"FOREIGN KEY (job_id) REFERENCES job(job_id)"
 		");"
 	)

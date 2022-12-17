@@ -473,18 +473,14 @@ server <- function(input, output, session) {
 	        start_time = toString(start_time),
 	        job_name = toString(input$job_name)
 	      )
-	      print(todf)
 	      insert_query("job", todf)
 	      
 	      query <- stringr::str_glue("SELECT job_id FROM job ORDER BY job_id DESC LIMIT 1;")
 	      job_id <- get_query(query)
 	      params <- c(params, job_id=job_id)
-	      print("params")
 	      
-	      params_insert <- do.call(rbind, params) %>% as.data.frame() %>% t()
-	      params <- as.data.frame(t(params))
-	      print(params_insert)
-	      print(typeof(params_insert))
+	      params_insert <- do.call(rbind, params) %>% as.data.frame() %>% t() %>% as.data.frame()
+	      names(params_insert)[names(params_insert) == 'job_id.job_id'] <- 'job_id'
 	      insert_query("parameter", params_insert)
 	      
 	      jobfiles <- NULL
