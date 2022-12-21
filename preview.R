@@ -59,7 +59,7 @@ get_query <- function(query){
 	dbGetQuery(sqlconn, query)
 }
 
-send_query <- function(quert){
+send_query <- function(query){
   sqlconn <- dbConnect(
     drv = RMySQL::MySQL(),
     dbname='boloa',
@@ -107,7 +107,7 @@ ui <- fluidPage(
 						br(),
 						textInput("title", label = "Sample description(s)"),
 						h4("Mass Spectrometry data:"),
-						fileInput("msdata", label = "MS-data", multiple = TRUE, accept = c(".mzXML", ".raw")),
+						fileInput("msdata", label = "MS-data", multiple = TRUE, accept = c(".mzXML", ".raw", ".CDF")),
 						tableOutput("bestanden"),
 						actionButton("dataupl", label = "Submit", width = 180),
 						br(),
@@ -144,7 +144,7 @@ ui <- fluidPage(
 				fluidRow(
 					style='margin-top:20px; border-top:1px solid #dfd7ca;',
 					column(2,
-						selectInput("preset", label = "Parameter presets", choices = list("None" = 0, "LC-MS" = 1, "GC-MS" = 2, "Automatic" = 3)),
+						selectInput("preset", label = "Parameter presets", choices = list("None" = 0, "LC-MS" = 1, "GC-MS" = 2, "Automatic (centWave only)" = 3), width = 160),
 						textInput("job_name", label = "Job name"),
 						actionButton("submitJob", "Submit job", width = 180, icon=icon("play")),
 						tableOutput("jobval")
@@ -180,7 +180,7 @@ ui <- fluidPage(
 					),
 					column(2,
 						br(),br(),
-						h5("3. LC-MS settings"),
+						h5("3. Annotation"),
 						checkboxInput("verbose_cols", label = "verbose.columns", 0),
 						selectInput("polarity", label = "polarity", choices = list("negative" = 0, "positive" = 1)),
 						numericInput("perc_fwhm", label = "perc_fwhm", 0.6),
@@ -195,9 +195,12 @@ ui <- fluidPage(
 					column(4)
 				)
 			),
-			tabPanel("Jobs",  icon = icon("arrow-right"),
-			  fluidRow(h4("Select a job to analyse contents:"),
-			           DT::dataTableOutput("jobs"))
+			tabPanel("Jobs", icon = icon("arrow-right"),
+			  fluidRow(
+			    h4("Select a job to analyse contents:"),
+			    DT::dataTableOutput("jobs"),
+			    actionButton("updateJobsTable", label = "\n Update table"),
+			    actionButton("analyse", label = "\n Analyse job"))
 			),
 			tabPanel("Analysis",  icon = icon("arrow-right"))
 		)
@@ -214,15 +217,16 @@ server <- function(input, output, session) {
 			file <- input$msdata
 			ext <- tools::file_ext(file$datapath)
 			req(file)
-			validate(need(ext %in% c("raw", "mzXML"), "Please upload a .raw or .mzXML file!"))
+			validate(need(ext %in% c("raw", "mzXML", "CDF"), "Please upload a .raw, .CDF or .mzXML file!"))
 		})
 	})
   
 	#Update van tabel op "Upload data" tab
-	sample_table <- reactive({
+	updateEvent <- reactive({
 		list(input$tabSwitch, input$dataupl)
 	})
-	observeEvent(sample_table, {
+	#Sample selection table
+	observeEvent(updateEvent, {
 		query <- stringr::str_glue("SELECT upload_date, original_file_name, sample_hash, sample_name, chromatography_type FROM sample ORDER BY upload_date DESC;")
 		sample_table_content <<- get_query(query)
 		sample_table_content$chromatography_type[sample_table_content$chromatography_type == 1] <- "Liquid"
@@ -230,6 +234,31 @@ server <- function(input, output, session) {
 		output$uploaded_samples <- DT::renderDataTable({
 			DT::datatable(sample_table_content[, c(1, 2, 4, 5)])
 		}, server = FALSE)
+		query <- stringr::str_glue("SELECT * FROM job ORDER BY start_time DESC;")
+		job_table_content <<- get_query(query)
+		if (length(job_table_content[, 1]) != 0) {
+		  job_table_content$end_time[is.null(sample_table_content$end_time)] <- "-"
+		}
+		output$jobs <- DT::renderDataTable({
+		  DT::datatable(job_table_content[, c(5, 3, 4, 2)], selection = 'single')
+		}, server = FALSE)
+	})
+	
+	#Job table
+	observeEvent(input$updateJobsTable, {
+	  query <- stringr::str_glue("SELECT * FROM job ORDER BY start_time DESC;")
+	  job_table_content <<- get_query(query)
+	  progress <- shiny::Progress$new()
+	  on.exit(progress$close())
+	  progress$set(message = "Refreshing", value = 0)
+	  progress$inc(1, detail = "Jobs")
+	  if (length(job_table_content[, 1]) != 0) {
+	    job_table_content$end_time[is.null(sample_table_content$end_time)] <- "-"
+	  }
+	  output$jobs <- DT::renderDataTable({
+	    DT::datatable(job_table_content[, c(5, 3, 4, 2)], selection = 'single')
+	  }, server = FALSE)
+	  progress$close()
 	})
 	
 	#On click preview button
@@ -294,7 +323,7 @@ server <- function(input, output, session) {
 			count <- 0
 			progress <- shiny::Progress$new()
 			on.exit(progress$close())
-			progress$set(message = "Uploading file", value = 0)
+			progress$set(message = "Uploading", value = 0)
 			for (fileloc in file$datapath) {
 			  progress$inc(1/length(file$datapath), detail = paste("File:", file$name[count + 1]))
 				file.copy(fileloc, dir)
@@ -303,9 +332,15 @@ server <- function(input, output, session) {
   					system(paste("docker run -it --rm -v ", dirUF, ":/massascans chambm/pwiz-skyline-i-agree-to-the-vendor-licenses wine msconvert /massascans/", countUF, ".raw", " --mzXML -o /massascans", sep = "")) #change .raw files to .mzXML
   					system(paste("rm ", dirUF, "/", countUF, ".raw", sep = ""))
   				}
-  				hash <- system(paste("sha224sum ", paste(dirUF, "/", countUF, ".mzXML", sep = ""), " | awk '{print $1}'", sep = ""), intern=TRUE)
-  				file.rename(paste(dirUF, "/", countUF, ".mzXML", sep = ""), paste(dirUF, "/", hash, ".mzXML", sep = ""))
-  				filepath <- toString(paste(dirUF, "/", hash, ".mzXML", sep = ""))
+				  if (grepl('.mzXML', filelocUF, fixed=TRUE)) {
+				    filetype <- ".mzXML"
+				  }
+				  if (grepl('.CDF', filelocUF, fixed=TRUE)) {
+				    filetype <- ".CDF"
+				  }
+  				hash <- system(paste("sha224sum ", paste(dirUF, "/", countUF, filetype, sep = ""), " | awk '{print $1}'", sep = ""), intern=TRUE)
+  				file.rename(paste(dirUF, "/", countUF, filetype, sep = ""), paste(dirUF, "/", hash, filetype, sep = ""))
+  				filepath <- toString(paste(dirUF, "/", hash, filetype, sep = ""))
   				tryCatch(
   					{
   						aa <- openMSfile(filepath)
@@ -370,35 +405,39 @@ server <- function(input, output, session) {
 	
 	#Updata parameter usage to datatype and preset selection
 	observeEvent(input$preset, {
-	#Disable all parameter inputs for automatic mode
+# 	#Disable all parameter inputs for automatic mode
   	for(app_element in all_params) {
   		if(input$preset == 3) {
   			shinyjs::disable(app_element)
   		}
-  		else {
-  			if(input$datatype == 2) { #PAS AAN
-  				if(!(app_element %in% lcms_only)) {
-  					shinyjs::enable(app_element)
-  				}
-  			}
-  			else {
-  				shinyjs::enable(app_element)
-  			}
-  		}
+  	  else {
+      	shinyjs::enable(app_element)
+  	  }
   	}
-  	})
-  	observeEvent(input$datatype, { #PAS AAN
-  	#Disable/enable buttons for LC-MS
-  	for(lc_element in lcms_only) {
-  		if(input$datatype == 2) { #PAS AAN
-  			shinyjs::disable(lc_element)
-  		}
-  		else {
-  			if(input$preset != 3) {
-  				shinyjs::enable(lc_element)
-  			}
-  		}
-  	}
+  	# 	else {
+  	# 		if(input$datatype == 2) { #PAS AAN
+  	# 			if(!(app_element %in% lcms_only)) {
+  	# 				shinyjs::enable(app_element)
+  	# 			}
+  	# 		}
+  	# 		else {
+  	# 			shinyjs::enable(app_element)
+  	# 		}
+  	# 	}
+  	# }
+  	# })
+  	# observeEvent(input$datatype, { #PAS AAN
+  	# #Disable/enable buttons for LC-MS
+  	# for(lc_element in lcms_only) {
+  	# 	if(input$datatype == 2) { #PAS AAN
+  	# 		shinyjs::disable(lc_element)
+  	# 	}
+  	# 	else {
+  	# 		if(input$preset != 3) {
+  	# 			shinyjs::enable(lc_element)
+  	# 		}
+  	# 	}
+  	# }
 	})
 	
 	#Conditionally disable the "Preview spectrum" button
@@ -430,6 +469,19 @@ server <- function(input, output, session) {
 		  })
 			shinyjs::enable("preview")
 		}
+	})
+	
+	observeEvent(input$jobs_rows_selected, ignoreNULL = FALSE, {
+	  if (is.null(input$jobs_rows_selected)) {
+	    shinyjs::disable("analyse")
+	  }
+	  else if (job_table_content[input$jobs_rows_selected, ]$job_status != "Finished") {
+	    shinyjs::disable("analyse")
+	  }
+	  else {
+	    shinyjs::enable("analyse")
+	  }
+	  
 	})
 	
 	#Verandering van parameters naar preset
@@ -466,7 +518,7 @@ server <- function(input, output, session) {
 	      #Insert job with status
 	      params <- c(params, sample_type=input$datatype)
 	      start_time <- format(Sys.time(), "%Y-%m-%d %X")
-	      job_status <- "Running..."
+	      job_status <- "Initializing..."
 	      preset <- input$preset
 	      todf <- data.frame(
 	        job_status = toString(job_status),
@@ -497,31 +549,67 @@ server <- function(input, output, session) {
 	        sample_number <- sample_number + 1
 	      }
 	      
-	      #future({metaboanalyst_data_processing(jobfiles, params, preset)}, packages = c("MetaboAnalystR", "OptiLCMS"))
-	      shinyjs::alert(paste("Job: ", input$job_name, ' is running. Check progress in the "Jobs" tab.', sep = ""))
-	      mSet <- metaboanalyst_data_processing(jobfiles, params, preset) #Non async!!!
-	      dir <- getwd()
-	      dir <- paste(dir, "/msets/", sep = "")
-	      
-	      
-	      saveRDS(mSet, paste(dir, job_id, ".rds", sep = ""))
-	      todf <- data.frame(
-	        job_id = toString(job_id),
-	        file_path = toString(paste(dir, job_id, ".rds", sep = ""))
-	      )
-	      insert_query("processed_sample", todf)
+	      future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, packages = c("MetaboAnalystR", "OptiLCMS", "RMySQL", "stringr"))
+	      shinyjs::alert(paste('Your job "', input$job_name, '" is running. Check progress in the "Jobs" tab.', sep = ""))
+	      session$reload()
 	    }
 	  }
 	})
 	
 	
+	
+	#################
+	###########       ASYNC FUNCTIONS
+	# VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
 	#Function to process the selected MS-files
-	metaboanalyst_data_processing <- function(massfiles, parameters, preset){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
+	metaboanalyst_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pwd){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
+	  #####################
+	  send_query <- function(query){
+	    sqlconn <- dbConnect(
+	      drv = RMySQL::MySQL(),
+	      dbname='boloa',
+	      host="127.0.0.1",
+	      port=3306,
+	      user=db_usr,
+	      password=db_pwd
+	    )
+	    on.exit(dbDisconnect(sqlconn))
+	    dbSendQuery(sqlconn, query)
+	  }
+	  insert_query <- function(tb_name, data){
+	    sqlconn <- dbConnect(
+	      drv = RMySQL::MySQL(),
+	      dbname='boloa',
+	      host="127.0.0.1",
+	      port=3306,
+	      user=db_usr,
+	      password=db_pwd
+	    )
+	    on.exit(dbDisconnect(sqlconn))
+	    dbWriteTable(sqlconn, tb_name, data, append = TRUE, row.names = FALSE)
+	  }
+	  get_query <- function(query){
+	    sqlconn <- dbConnect(
+	      drv = RMySQL::MySQL(),
+	      dbname='boloa',
+	      host="127.0.0.1",
+	      port=3306,
+	      user=db_usr,
+	      password=db_pwd
+	    )
+	    on.exit(dbDisconnect(sqlconn))
+	    dbGetQuery(sqlconn, query)
+	  }
+	  ################
+	  files <- massfiles$file_path
 	  #preset <- 3 # !!! CUSTOM PARAMETERS ARE NONFUNCTIONAL, AUTOMATIC HARDCODED. REMOVE WHEN FUNCTIONAL !!!
 	  if (preset == 3) {
 	    param_initial <- SetPeakParam(platform = "general")
-	    raw_train <- PerformROIExtraction(massfiles$file_path, rt.idx = 0.2, rmConts = FALSE)
+	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '1/4 Performing ROI extraction...' WHERE job_id = ", job_id, ";", sep = "")))
+	    raw_train <- PerformROIExtraction(files, rt.idx = 0.2, rmConts = FALSE)
+	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '2/4 Performing parameter optimization...' WHERE job_id = ", job_id, ";", sep = "")))
 	    def_params <- PerformParamsOptimization(raw_train, param = param_initial, ncore = 5)
+	    sink()
 	  }
 	  else {
 	    #fwhm = parameters$fwhm, steps= parameters$steps, peakBinSize = parameters$peakbinsize, criticalValue = parameters$criticalvalue, consecMissedLimit = parameters$consecmissedlimit, unions = parameters$unions, checkBack = parameters$checkback, withWave = parameters$withwave, profStep = parameters$profstep,
@@ -533,12 +621,23 @@ server <- function(input, output, session) {
 	    parameters$smooth <- c("loess", "linear")[strtoi(parameters$smooth) + 1]
 	    parameters$family <- c("gaussian", "symmetric")[strtoi(parameters$family) + 1]
 	    parameters$polarity <- c("negative", "positive")[strtoi(parameters$polarity) + 1]
-	    print(parameters)
-	    def_params <- SetPeakParam(platform = "general", Peak_method = parameters$peak_method, RT_method = parameters$rt_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minfraction), minSamples = as.double(parameters$minsamples), maxFeatures = as.double(parameters$maxfeatures), mzCenterFun = parameters$mzcenterfun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmconts) #verboseColumns
+	    def_params <- SetPeakParam(Peak_method = parameters$peak_method, RT_method = parameters$rt_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minfraction), minSamples = as.double(parameters$minsamples), maxFeatures = as.double(parameters$maxfeatures), mzCenterFun = parameters$mzcenterfun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmconts) #verboseColumns
 	  }
-	  rawData <- ImportRawMSData(path = massfiles$file_path, plotSettings = SetPlotParam(Plot=FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
+	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/4 Importing raw spectra...' WHERE job_id = ", job_id, ";", sep = "")))
+	  rawData <- ImportRawMSData(path = files, plotSettings = SetPlotParam(Plot=FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
+	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '4/4 Performing peak profiling...' WHERE job_id = ", job_id, ";", sep = "")))
 	  mSet <- PerformPeakProfiling(rawData,def_params, plotSettings = SetPlotParam(Plot = FALSE))
-	  return(mSet)
+	  dir <- getwd()
+	  dir <- paste(dir, "/msets/", toString(job_id), sep = "")
+	  save(mSet, paste(dir, "mSet.rda", sep = ""))
+	  todf <- data.frame(
+	    job_id = toString(job_id),
+	    file_path = toString(paste(dir, "mSet.rda", sep = ""))
+	  )
+	  insert_query("processed_sample", todf)
+	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'Finished' WHERE job_id = ", job_id, ";", sep = "")))
+	  end_time <- format(Sys.time(), "%Y-%m-%d %X")
+	  send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
 	}
 
 }

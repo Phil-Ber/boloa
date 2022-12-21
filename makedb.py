@@ -41,13 +41,10 @@ def make_job():
 	cur.execute("DROP TABLE IF EXISTS job;")
 	cur.execute("CREATE TABLE job ("
 		"job_id INT AUTO_INCREMENT PRIMARY KEY, "
-		"param_id INT, "
-		"job_status VARCHAR(10), "
+		"job_status VARCHAR(40), " #CHANGE 40
 		"start_time DATETIME, "
-		"job_name VARCHAR(100), "
-		"FOREIGN KEY (param_id)"
-                "       REFERENCES parameters(param_id)"
-
+		"end_time DATETIME, " #NEW
+		"job_name VARCHAR(100) "
 		");"
 	)
 	print("Job table created...")
@@ -117,11 +114,11 @@ def make_sample_job():
 
 cur.execute("SET GLOBAL local_infile=1;")
 cur.execute("SET FOREIGN_KEY_CHECKS=0;")
-import os
-dir_path = os.path.dirname(os.path.realpath(__file__))
-bash_remove = f"rm {dir_path}/massascans/*.mzXML"
-os.system(bash_remove)
-make_sample()
+#import os
+#dir_path = os.path.dirname(os.path.realpath(__file__))
+#bash_remove = f"rm {dir_path}/massascans/*.mzXML"
+#os.system(bash_remove)
+#make_sample()
 make_parameter()
 make_job()
 make_processed_sample()
