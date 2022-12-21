@@ -91,7 +91,7 @@ options(shiny.maxRequestSize=10000*1024^2)
 hostip <- "145.97.18.149"
 portnr <- 7123
 
-all_params <- c("min_peakwidth", "max_peakwidth", "mzdiff", "snthresh", "bw", "peak_method", "rt_method", "ppm", "noise", "prefilter", "value_of_prefilter", "minfraction", "minsamples", "maxfeatures", "fitgauss", "mzcenterfun", "integrate", "extra", "span", "smooth", "family", "verbose_cols", "polarity", "perc_fwhm", "mz_abs_iso", "max_charge", "max_iso", "corr_eic_th", "mz_abs_add", "rmconts")
+all_params <- c("Peak_method", "RT_method", "mzdiff", "snthresh", "bw", "ppm", "min_peakwidth", "max_peakwidth", "noise", "prefilter", "value_of_prefilter", "minFraction", "minSamples", "maxFeatures", "mzCenterFun", "integrate", "extra", "span", "smooth", "family", "fitgauss", "polarity", "perc_fwhm", "mz_abs_iso", "max_charge", "max_iso", "corr_eic_th", "mz_abs_add", "rmConts", "verboseColumns")
 lcms_only <- tail(all_params, n=9)
 
 
@@ -157,8 +157,8 @@ ui <- fluidPage(
 						numericInput("mzdiff", label = "mzdiff", 0.01),
 						numericInput("snthresh", label = "snthresh", 10),
 						numericInput("bw", label = "bw", 10),
-						selectInput("peak_method", label = "Peak_method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2)),
-						selectInput("rt_method", label = "RT_method", choices = list("loess" = 0, "obiwarp" = 1)),
+						selectInput("Peak_method", label = "Peak_method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2)),
+						selectInput("RT_method", label = "RT_method", choices = list("loess" = 0, "obiwarp" = 1)),
 						numericInput("ppm", label = "ppm", 5),
 						numericInput("noise", label = "noise", 1000),
 						numericInput("prefilter", label = "prefilter", 3),
@@ -167,11 +167,11 @@ ui <- fluidPage(
 					column(2,
 						br(),br(),
 						h5("2. Alignment"),
-						numericInput("minfraction", label = "minFraction", 0.8),
-						numericInput("minsamples", label = "minSamples", 1),
-						numericInput("maxfeatures", label = "maxFeatures", 100),
+						numericInput("minFraction", label = "minFraction", 0.8),
+						numericInput("minSamples", label = "minSamples", 1),
+						numericInput("maxFeatures", label = "maxFeatures", 100),
 						checkboxInput("fitgauss", label = "fitgauss", 0),
-						selectInput("mzcenterfun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4)),
+						selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4)),
 						numericInput("integrate", label = "integrate", 1),
 						numericInput("extra", label = "extra", 1),
 						numericInput("span", label = "span", 0.4),
@@ -181,7 +181,7 @@ ui <- fluidPage(
 					column(2,
 						br(),br(),
 						h5("3. Annotation"),
-						checkboxInput("verbose_cols", label = "verbose.columns", 0),
+						checkboxInput("verboseColumns", label = "verboseColumns", 0),
 						selectInput("polarity", label = "polarity", choices = list("negative" = 0, "positive" = 1)),
 						numericInput("perc_fwhm", label = "perc_fwhm", 0.6),
 						numericInput("mz_abs_iso", label = "mz_abs_iso", 0.005),
@@ -189,7 +189,7 @@ ui <- fluidPage(
 						numericInput("max_iso", label = "max_iso", 2),
 						numericInput("corr_eic_th", label = "corr_eic_th", 0.85),
 						numericInput("mz_abs_add", label = "mz_abs_add", 0.001),
-						checkboxInput("rmconts", label = "rmConts", 1),
+						checkboxInput("rmConts", label = "rmConts", 1),
 						br()
 					),
 					column(4)
@@ -502,6 +502,12 @@ server <- function(input, output, session) {
 		# 	updateCheckboxInput(session, "p3", value = 0) }
 	})
 	
+	#Show relevant parameters for peak method
+	observeEvent(input$peak_method, {
+	  
+	})
+	
+	#Actions when job gets submitted
 	observeEvent(input$submitJob, {
 	  output$jobval <- renderTable({
 	    validate(need(nchar(input$job_name) != 0, "No job title avaiable"))
@@ -530,6 +536,12 @@ server <- function(input, output, session) {
 	      query <- stringr::str_glue("SELECT job_id FROM job ORDER BY job_id DESC LIMIT 1;")
 	      job_id <- get_query(query)
 	      params <- c(params, job_id=job_id)
+	      params$Peak_method <- c("centWave", "massifquant", "matchedFilter")[strtoi(input$Peak_method) + 1]
+	      params$RT_method <- c("loess", "obiwarp")[strtoi(input$RT_method) + 1]
+	      params$mzCenterFun <- c("wMean", "mean", "apex", "wMeanApex3", "meanApex3")[strtoi(input$mzCenterFun) + 1]
+	      params$smooth <- c("loess", "linear")[strtoi(input$smooth) + 1]
+	      params$family <- c("gaussian", "symmetric")[strtoi(input$family) + 1]
+	      params$polarity <- c("negative", "positive")[strtoi(input$polarity) + 1]
 	      
 	      params_insert <- do.call(rbind, params) %>% as.data.frame() %>% t() %>% as.data.frame()
 	      names(params_insert)[names(params_insert) == 'job_id.job_id'] <- 'job_id'
@@ -551,12 +563,11 @@ server <- function(input, output, session) {
 	      
 	      future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, packages = c("MetaboAnalystR", "OptiLCMS", "RMySQL", "stringr"))
 	      shinyjs::alert(paste('Your job "', input$job_name, '" is running. Check progress in the "Jobs" tab.', sep = ""))
+	      # metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #TEST
 	      session$reload()
 	    }
 	  }
 	})
-	
-	
 	
 	#################
 	###########       ASYNC FUNCTIONS
@@ -605,28 +616,31 @@ server <- function(input, output, session) {
 	  #preset <- 3 # !!! CUSTOM PARAMETERS ARE NONFUNCTIONAL, AUTOMATIC HARDCODED. REMOVE WHEN FUNCTIONAL !!!
 	  if (preset == 3) {
 	    param_initial <- SetPeakParam(platform = "general")
+	    print(param_initial)
 	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '1/4 Performing ROI extraction...' WHERE job_id = ", job_id, ";", sep = "")))
-	    raw_train <- PerformROIExtraction(files, rt.idx = 0.2, rmConts = FALSE)
+	    raw_train <- PerformROIExtraction(files, rt.idx = 0.2, rmConts = FALSE, plot = FALSE)
 	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '2/4 Performing parameter optimization...' WHERE job_id = ", job_id, ";", sep = "")))
 	    def_params <- PerformParamsOptimization(raw_train, param = param_initial, ncore = 5)
-	    sink()
+	    print(def_params)
 	  }
 	  else {
 	    #fwhm = parameters$fwhm, steps= parameters$steps, peakBinSize = parameters$peakbinsize, criticalValue = parameters$criticalvalue, consecMissedLimit = parameters$consecmissedlimit, unions = parameters$unions, checkBack = parameters$checkback, withWave = parameters$withwave, profStep = parameters$profstep,
 	    #print(t(parameters))
 	    parameters[is.na(parameters)] <- 0
-	    parameters$peak_method <- c("centWave", "massifquant", "matchedFilter")[strtoi(parameters$peak_method) + 1]
-	    parameters$rt_method <- c("loess", "obiwarp")[strtoi(parameters$rt_method) + 1]
-	    parameters$mzcenterfun <- c("wMean", "mean", "apex", "wMeanApex3", "meanApex3")[strtoi(parameters$mzcenterfun) + 1]
-	    parameters$smooth <- c("loess", "linear")[strtoi(parameters$smooth) + 1]
-	    parameters$family <- c("gaussian", "symmetric")[strtoi(parameters$family) + 1]
-	    parameters$polarity <- c("negative", "positive")[strtoi(parameters$polarity) + 1]
-	    def_params <- SetPeakParam(Peak_method = parameters$peak_method, RT_method = parameters$rt_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minfraction), minSamples = as.double(parameters$minsamples), maxFeatures = as.double(parameters$maxfeatures), mzCenterFun = parameters$mzcenterfun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmconts) #verboseColumns
+	    def_params <- SetPeakParam(Peak_method = parameters$Peak_method, RT_method = parameters$RT_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minFraction), minSamples = as.double(parameters$minSamples), maxFeatures = as.double(parameters$maxFeatures), mzCenterFun = parameters$mzCenterFun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmConts) #verboseColumns
 	  }
 	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/4 Importing raw spectra...' WHERE job_id = ", job_id, ";", sep = "")))
-	  rawData <- ImportRawMSData(path = files, plotSettings = SetPlotParam(Plot=FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
+	  rawData <- ImportRawMSData(path = files, plotSettings = SetPlotParam(Plot = FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
+	  rawData@params <- def_params
 	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '4/4 Performing peak profiling...' WHERE job_id = ", job_id, ";", sep = "")))
-	  mSet <- PerformPeakProfiling(rawData,def_params, plotSettings = SetPlotParam(Plot = FALSE))
+	  
+	  # setClass("method", slots=list(peak_profiling="list"))
+	  # picking <- new("method", peak_profiling = list(c1 = TRUE, c2 = FALSE, c3 = FALSE, c4 = FALSE))
+	  
+	  mSet <- PerformPeakProfiling(rawData, def_params, plotSettings = SetPlotParam(Plot = FALSE))
+	  end_time <- format(Sys.time(), "%Y-%m-%d %X")
+	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'Finished' WHERE job_id = ", job_id, ";", sep = "")))
+	  send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
 	  dir <- getwd()
 	  dir <- paste(dir, "/msets/", toString(job_id), sep = "")
 	  save(mSet, paste(dir, "mSet.rda", sep = ""))
@@ -635,9 +649,6 @@ server <- function(input, output, session) {
 	    file_path = toString(paste(dir, "mSet.rda", sep = ""))
 	  )
 	  insert_query("processed_sample", todf)
-	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'Finished' WHERE job_id = ", job_id, ";", sep = "")))
-	  end_time <- format(Sys.time(), "%Y-%m-%d %X")
-	  send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
 	}
 
 }

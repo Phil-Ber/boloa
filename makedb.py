@@ -59,31 +59,31 @@ def make_parameter():
 		"mzdiff FLOAT, "
 		"snthresh FLOAT, "
 		"bw FLOAT, "
-		"peak_method FLOAT, "
+		"Peak_method VARCHAR(20), " #CHANGE
 		"ppm FLOAT, "
 		"noise FLOAT, "
 		"prefilter FLOAT, "
 		"value_of_prefilter FLOAT, "
-		"minfraction FLOAT, "
-		"minsamples FLOAT, "
-		"maxfeatures FLOAT, "
+		"minFraction FLOAT, "
+		"minSamples FLOAT, "
+		"maxFeatures FLOAT, "
 		"fitgauss TINYINT, "
-		"mzcenterfun FLOAT, "
+		"mzCenterFun VARCHAR(20), " #CHANGE
 		"integrate FLOAT, "
 		"extra FLOAT, "
 		"span FLOAT, "
-		"smooth FLOAT, "
-		"family FLOAT, "
-		"verbose_cols TINYINT, "
-		"polarity FLOAT, "
+		"smooth VARCHAR(20), " #CHANGE
+		"family VARCHAR(20), " #CHANGE
+		"verboseColumns TINYINT, "
+		"polarity VARCHAR(20), " #CHANGE
 		"perc_fwhm FLOAT, "
 		"mz_abs_iso FLOAT, "
 		"max_charge FLOAT, "
 		"max_iso FLOAT, "
 		"corr_eic_th FLOAT, "
 		"mz_abs_add FLOAT, "
-		"rmconts TINYINT, "
-		"rt_method INT, " #NEW!!
+		"rmConts TINYINT, "
+		"RT_method VARCHAR(20), " #NEW!!
 		"FOREIGN KEY (job_id) REFERENCES job(job_id)"
 		");"
 	)
