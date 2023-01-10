@@ -84,7 +84,7 @@ def make_parameter():
 		"mz_abs_add FLOAT, "
 		"rmConts TINYINT, "
 		"RT_method VARCHAR(20), " #NEW!!
-		"FOREIGN KEY (job_id) REFERENCES job(job_id)"
+		"FOREIGN KEY (job_id) REFERENCES job(job_id) ON DELETE CASCADE"
 		");"
 	)
 	print("Parameter table created...")
@@ -94,7 +94,7 @@ def make_processed_sample():
 	cur.execute("CREATE TABLE processed_sample ("
       "job_id INT PRIMARY KEY, "
       "file_path VARCHAR(100), "
-      "FOREIGN KEY (job_id) REFERENCES job(job_id)"
+      "FOREIGN KEY (job_id) REFERENCES job(job_id) ON DELETE CASCADE"
     ");"
 	)
 	print("Processed sample table created...")
@@ -106,8 +106,8 @@ def make_sample_job():
       "sample_hash VARCHAR(100), "
       "sample_number INT, "
       "PRIMARY KEY(job_id, sample_hash), "
-      "FOREIGN KEY(job_id) REFERENCES job(job_id), "
-      "FOREIGN KEY(sample_hash) REFERENCES sample(sample_hash)"
+      "FOREIGN KEY(job_id) REFERENCES job(job_id) ON DELETE CASCADE, "
+      "FOREIGN KEY(sample_hash) REFERENCES sample(sample_hash) ON DELETE CASCADE"
     ");"
   )
   print("Sample job table created...")

@@ -240,9 +240,9 @@ server <- function(input, output, session) {
 		}, server = FALSE)
 		query <- stringr::str_glue("SELECT * FROM job ORDER BY start_time DESC;")
 		job_table_content <<- get_query(query)
-		if (length(job_table_content[, 1]) != 0) {
-		  job_table_content$end_time[is.null(sample_table_content$end_time)] <- "-"
-		}
+		# if (length(job_table_content[, 1]) != 0) {
+		#   job_table_content$end_time[is.null(sample_table_content$end_time)] <- "-"
+		# }
 		output$jobs <- DT::renderDataTable({
 		  DT::datatable(job_table_content[, c(5, 3, 4, 2)], selection = 'single')
 		}, server = FALSE)
@@ -252,9 +252,9 @@ server <- function(input, output, session) {
 	observeEvent(input$updateJobsTable, {
 	  query <- stringr::str_glue("SELECT * FROM job ORDER BY start_time DESC;")
 	  job_table_content <<- get_query(query)
-	  if (length(job_table_content[, 1]) != 0) {
-	    job_table_content$end_time[is.null(sample_table_content$end_time)] <- "-"
-	  }
+	  # if (length(job_table_content[, 1]) != 0) {
+	  #   job_table_content$end_time[is.null(sample_table_content$end_time)] <- "-"
+	  # }
 	  output$jobs <- DT::renderDataTable({
 	    DT::datatable(job_table_content[, c(5, 3, 4, 2)], selection = 'single')
 	  }, server = FALSE)
@@ -559,11 +559,10 @@ server <- function(input, output, session) {
 	        insert_query("sample_job", todf)
 	        sample_number <- sample_number + 1
 	      }
-	      
-	      future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, packages = c("MetaboAnalystR", "OptiLCMS", "RMySQL", "stringr"))
 	      shinyjs::alert(paste('Your job "', input$job_name, '" is running. Check progress in the "Jobs" tab.', sep = ""))
-	      # metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #TEST
+	      future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = c("MetaboAnalystR", "OptiLCMS", "RMySQL", "stringr"))
 	      session$reload()
+	      # metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #TEST
 	    }
 	  }
 	})
@@ -614,7 +613,7 @@ server <- function(input, output, session) {
 	  tryCatch(
 	    {
     	  files <- massfiles$file_path
-    	  preset <- 3 # !!! CUSTOM PARAMETERS ARE NONFUNCTIONAL, AUTOMATIC HARDCODED. REMOVE WHEN FUNCTIONAL !!!
+    	  # preset <- 3 # !!! CUSTOM PARAMETERS ARE NONFUNCTIONAL, AUTOMATIC HARDCODED. REMOVE WHEN FUNCTIONAL !!!
     	  if (preset == 3) {
     	    param_initial <- SetPeakParam(platform = "general")
     	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '1/4 Performing ROI extraction...' WHERE job_id = ", job_id, ";", sep = "")))
@@ -628,6 +627,8 @@ server <- function(input, output, session) {
     	    #print(t(parameters))
     	    parameters[is.na(parameters)] <- 0
     	    def_params <- SetPeakParam(Peak_method = parameters$Peak_method, RT_method = parameters$RT_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minFraction), minSamples = as.double(parameters$minSamples), maxFeatures = as.double(parameters$maxFeatures), mzCenterFun = parameters$mzCenterFun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmConts) #verboseColumns
+    	  print(SetPeakParam(platform = "general"))
+    	  print(def_params)
     	  }
     	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/4 Importing raw spectra...' WHERE job_id = ", job_id, ";", sep = "")))
     	  rawData <- ImportRawMSData(path = files, plotSettings = SetPlotParam(Plot = FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
@@ -638,17 +639,15 @@ server <- function(input, output, session) {
     	  send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
     	  dir <- getwd()
     	  dir <- paste(dir, "/msets/", toString(job_id), sep = "")
-    	  save(mSet, file = paste(dir, "/mSet.rda", sep = ""))
+    	  save(mSet, file = paste(dir, ".rda", sep = ""))
     	  todf <- data.frame(
     	    job_id = toString(job_id),
-    	    file_path = toString(paste(dir, "/mSet.rda", sep = ""))
+    	    file_path = toString(paste(dir, ".rda", sep = ""))
     	  )
     	  insert_query("processed_sample", todf)
 	    },
 	    error = function(cnd){
-	        end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
-	        send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED' WHERE job_id = ", job_id, ";", sep = "")))
-	        send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
+	        send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED', end_time = '", format(Sys.time() + 60*60, "%Y-%m-%d %X"), "' WHERE job_id = ", job_id, ";", sep = "")))
 	      return(NA)
 	    }
 	  )
