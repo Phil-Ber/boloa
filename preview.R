@@ -612,8 +612,8 @@ server <- function(input, output, session) {
 	  #   dbGetQuery(sqlconn, query)
 	  # }
 	  ################
-	  tryCatch(
-	    {
+	  # tryCatch(
+	  #   {
     	  files <- massfiles$file_path
     	  #preset <- 3 # !!! CUSTOM PARAMETERS ARE NONFUNCTIONAL, AUTOMATIC HARDCODED. REMOVE WHEN FUNCTIONAL !!!
     	  if (preset == 3) {
@@ -632,12 +632,14 @@ server <- function(input, output, session) {
     	  }
     	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/4 Importing raw spectra...' WHERE job_id = ", job_id, ";", sep = "")))
     	  rawData <- ImportRawMSData(path = files, plotSettings = SetPlotParam(Plot = FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
-    	  rawData@params <- def_params
+    	  #rawData@params <- def_params
     	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '4/4 Performing peak profiling...' WHERE job_id = ", job_id, ";", sep = "")))
     	  # setClass("method", slots=list(peak_profiling="list"))
     	  # picking <- new("method", peak_profiling = list(c1 = TRUE, c2 = FALSE, c3 = FALSE, c4 = FALSE))
     	  
     	  mSet <- PerformPeakProfiling(rawData, def_params, plotSettings = SetPlotParam(Plot = FALSE))
+    	  #ERROR:trying to get slot "params" from an object (class "simpleError") that is not an S4 object </font>
+    	  #Warning: Error in PerformPeakProfiling: EXCEPTION POINT CODE: PU3
     	  end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
     	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'Finished' WHERE job_id = ", job_id, ";", sep = "")))
     	  send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
@@ -649,14 +651,14 @@ server <- function(input, output, session) {
     	    file_path = toString(paste(dir, "mSet.rda", sep = ""))
     	  )
     	  insert_query("processed_sample", todf)
-	    },
-	    error = function(cnd){
-	        end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
-	        send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED' WHERE job_id = ", job_id, ";", sep = "")))
-	        send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
-	      return(NA)
-	    }
-	  )
+	  #   },
+	  #   error = function(cnd){
+	  #       end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
+	  #       send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED' WHERE job_id = ", job_id, ";", sep = "")))
+	  #       send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
+	  #     return(NA)
+	  #   }
+	  # )
 	}
 
 }
