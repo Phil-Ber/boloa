@@ -27,7 +27,6 @@ library(waiter)
 #if (!require("BiocManager", quietly = TRUE))
 #	install.packages("BiocManager")
 #BiocManager::install("OptiLCMS")
-
 tryCatch(
 	expr = {
 		library("MetaboAnalystR")
@@ -561,9 +560,9 @@ server <- function(input, output, session) {
 	        sample_number <- sample_number + 1
 	      }
 	      
-	      # future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, packages = c("MetaboAnalystR", "OptiLCMS", "RMySQL", "stringr"))
+	      future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, packages = c("MetaboAnalystR", "OptiLCMS", "RMySQL", "stringr"))
 	      shinyjs::alert(paste('Your job "', input$job_name, '" is running. Check progress in the "Jobs" tab.', sep = ""))
-	      metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #TEST
+	      # metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #TEST
 	      session$reload()
 	    }
 	  }
@@ -575,47 +574,47 @@ server <- function(input, output, session) {
 	#Function to process the selected MS-files
 	metaboanalyst_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pwd){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
 	  #####################
-	  # send_query <- function(query){
-	  #   sqlconn <- dbConnect(
-	  #     drv = RMySQL::MySQL(),
-	  #     dbname='boloa',
-	  #     host="127.0.0.1",
-	  #     port=3306,
-	  #     user=db_usr,
-	  #     password=db_pwd
-	  #   )
-	  #   on.exit(dbDisconnect(sqlconn))
-	  #   dbSendQuery(sqlconn, query)
-	  # }
-	  # insert_query <- function(tb_name, data){
-	  #   sqlconn <- dbConnect(
-	  #     drv = RMySQL::MySQL(),
-	  #     dbname='boloa',
-	  #     host="127.0.0.1",
-	  #     port=3306,
-	  #     user=db_usr,
-	  #     password=db_pwd
-	  #   )
-	  #   on.exit(dbDisconnect(sqlconn))
-	  #   dbWriteTable(sqlconn, tb_name, data, append = TRUE, row.names = FALSE)
-	  # }
-	  # get_query <- function(query){
-	  #   sqlconn <- dbConnect(
-	  #     drv = RMySQL::MySQL(),
-	  #     dbname='boloa',
-	  #     host="127.0.0.1",
-	  #     port=3306,
-	  #     user=db_usr,
-	  #     password=db_pwd
-	  #   )
-	  #   on.exit(dbDisconnect(sqlconn))
-	  #   dbGetQuery(sqlconn, query)
-	  # }
+	  send_query <- function(query){
+	    sqlconn <- dbConnect(
+	      drv = RMySQL::MySQL(),
+	      dbname='boloa',
+	      host="127.0.0.1",
+	      port=3306,
+	      user=db_usr,
+	      password=db_pwd
+	    )
+	    on.exit(dbDisconnect(sqlconn))
+	    dbSendQuery(sqlconn, query)
+	  }
+	  insert_query <- function(tb_name, data){
+	    sqlconn <- dbConnect(
+	      drv = RMySQL::MySQL(),
+	      dbname='boloa',
+	      host="127.0.0.1",
+	      port=3306,
+	      user=db_usr,
+	      password=db_pwd
+	    )
+	    on.exit(dbDisconnect(sqlconn))
+	    dbWriteTable(sqlconn, tb_name, data, append = TRUE, row.names = FALSE)
+	  }
+	  get_query <- function(query){
+	    sqlconn <- dbConnect(
+	      drv = RMySQL::MySQL(),
+	      dbname='boloa',
+	      host="127.0.0.1",
+	      port=3306,
+	      user=db_usr,
+	      password=db_pwd
+	    )
+	    on.exit(dbDisconnect(sqlconn))
+	    dbGetQuery(sqlconn, query)
+	  }
 	  ################
-	  # tryCatch(
-	  #   {
+	  tryCatch(
+	    {
     	  files <- massfiles$file_path
-    	  #preset <- 3 # !!! CUSTOM PARAMETERS ARE NONFUNCTIONAL, AUTOMATIC HARDCODED. REMOVE WHEN FUNCTIONAL !!!
+    	  preset <- 3 # !!! CUSTOM PARAMETERS ARE NONFUNCTIONAL, AUTOMATIC HARDCODED. REMOVE WHEN FUNCTIONAL !!!
     	  if (preset == 3) {
     	    param_initial <- SetPeakParam(platform = "general")
     	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '1/4 Performing ROI extraction...' WHERE job_id = ", job_id, ";", sep = "")))
@@ -632,33 +631,27 @@ server <- function(input, output, session) {
     	  }
     	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/4 Importing raw spectra...' WHERE job_id = ", job_id, ";", sep = "")))
     	  rawData <- ImportRawMSData(path = files, plotSettings = SetPlotParam(Plot = FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
-    	  #rawData@params <- def_params
     	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '4/4 Performing peak profiling...' WHERE job_id = ", job_id, ";", sep = "")))
-    	  # setClass("method", slots=list(peak_profiling="list"))
-    	  # picking <- new("method", peak_profiling = list(c1 = TRUE, c2 = FALSE, c3 = FALSE, c4 = FALSE))
-    	  
     	  mSet <- PerformPeakProfiling(rawData, def_params, plotSettings = SetPlotParam(Plot = FALSE))
-    	  #ERROR:trying to get slot "params" from an object (class "simpleError") that is not an S4 object </font>
-    	  #Warning: Error in PerformPeakProfiling: EXCEPTION POINT CODE: PU3
     	  end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
     	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'Finished' WHERE job_id = ", job_id, ";", sep = "")))
     	  send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
     	  dir <- getwd()
     	  dir <- paste(dir, "/msets/", toString(job_id), sep = "")
-    	  save(mSet, paste(dir, "mSet.rda", sep = ""))
+    	  save(mSet, file = paste(dir, "/mSet.rda", sep = ""))
     	  todf <- data.frame(
     	    job_id = toString(job_id),
-    	    file_path = toString(paste(dir, "mSet.rda", sep = ""))
+    	    file_path = toString(paste(dir, "/mSet.rda", sep = ""))
     	  )
     	  insert_query("processed_sample", todf)
-	  #   },
-	  #   error = function(cnd){
-	  #       end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
-	  #       send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED' WHERE job_id = ", job_id, ";", sep = "")))
-	  #       send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
-	  #     return(NA)
-	  #   }
-	  # )
+	    },
+	    error = function(cnd){
+	        end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
+	        send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED' WHERE job_id = ", job_id, ";", sep = "")))
+	        send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
+	      return(NA)
+	    }
+	  )
 	}
 
 }
