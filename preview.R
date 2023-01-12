@@ -25,7 +25,6 @@ library(waiter)
 #library(xcms)
 
 #if (!require("BiocManager", quietly = TRUE))
-#	install.packages("BiocManager")
 #BiocManager::install("OptiLCMS")
 tryCatch(
 	expr = {
@@ -34,11 +33,13 @@ tryCatch(
 	  #library(shinyvalidate)
 	},
 	error = {
-		#pacman::p_load(c("impute", "pcaMethods", "globaltest", "GlobalAncova", "Rgraphviz", "preprocessCore", "genefilter", "SSPA", "sva", "limma", "KEGGgraph", "siggenes","BiocParallel", "MSnbase", "multtest", "RBGL", "edgeR"), character.only = TRUE)
+	#   install.packages("BiocManager")
+	# 	#pacman::p_load(c("impute", "pcaMethods", "globaltest", "GlobalAncova", "Rgraphviz", "preprocessCore", "genefilter", "SSPA", "sva", "limma", "KEGGgraph", "siggenes","BiocParallel", "MSnbase", "multtest", "RBGL", "edgeR"), character.only = TRUE)
 		pacman::p_load(c("Rserve", "ellipse", "scatterplot3d", "Cairo", "randomForest", "caTools", "e1071", "som", "impute", "pcaMethods", "RJSONIO", "ROCR", "globaltest", "GlobalAncova", "Rgraphviz", "preprocessCore", "genefilter", "pheatmap", "sva", "Rcpp", "pROC", "data.table", "limma", "car", "fitdistrplus", "lars", "Hmisc", "magrittr", "methods", "xtable", "pls", "caret", "lattice", "igraph", "gplots", "KEGGgraph", "reshape", "RColorBrewer", "tibble", "siggenes", "plotly", "xcms", "CAMERA", "fgsea", "MSnbase", "BiocParallel", "multtest", "RBGL", "edgeR", "fgsea", "crmn", "progress", "qs", "glasso"), character.only = TRUE)
-	  #install.packages("shinyvalidate", repos="https://mirrors.evoluso.com/CRAN/")
-		#devtools::install_github("xia-lab/MetaboAnalystR", build = TRUE, build_vignettes = TRUE)
-		#devtools::install_github("xia-lab/OptiLCMS", build = TRUE, build_vignettes = FALSE, build_manual =TRUE)
+	# 	BiocManager::install("mtbls2")
+	#   #install.packages("shinyvalidate", repos="https://mirrors.evoluso.com/CRAN/")
+	# 	devtools::install_github("xia-lab/MetaboAnalystR", build = TRUE, build_vignettes = TRUE)
+	# 	devtools::install_github("xia-lab/OptiLCMS", build = TRUE, build_vignettes = FALSE, build_manual =TRUE)
 	},
 	finally = {
 		library("MetaboAnalystR")
@@ -46,6 +47,9 @@ tryCatch(
 	  #library(shinyvalidate)
 	}
 )
+
+#print(warnings())
+
 get_query <- function(query){
 	sqlconn <- dbConnect(
 		drv = RMySQL::MySQL(),
@@ -149,6 +153,7 @@ ui <- fluidPage(
 						selectInput("preset", label = "Parameter presets", choices = list("None" = 0, "LC-MS" = 1, "GC-MS" = 2, "Automatic (centWave only)" = 3), width = 160),
 						textInput("job_name", label = "Job name"),
 						actionButton("submitJob", "Submit job", width = 180, icon=icon("play")),
+						checkboxInput("debug", label = "Debug mode", 0),
 						tableOutput("jobval")
 					),
 					column(2, #zet deze in een nieuwe tab, de 1e wordt voor alleen geuploade samples.
@@ -161,10 +166,10 @@ ui <- fluidPage(
 						numericInput("bw", label = "bw", 10),
 						selectInput("Peak_method", label = "Peak_method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2)),
 						selectInput("RT_method", label = "RT_method", choices = list("loess" = 0, "obiwarp" = 1)),
-						numericInput("ppm", label = "ppm", 5),
-						numericInput("noise", label = "noise", 1000),
-						numericInput("prefilter", label = "prefilter", 3),
-						numericInput("value_of_prefilter", label = "value_of_prefilter", 100),
+						numericInput("ppm", label = "ppm", 93.07),
+						numericInput("noise", label = "noise", 0),
+						numericInput("prefilter", label = "prefilter", 2),
+						numericInput("value_of_prefilter", label = "value_of_prefilter", 328.63),
 					),
 					column(2,
 						br(),br(),
@@ -560,9 +565,14 @@ server <- function(input, output, session) {
 	        sample_number <- sample_number + 1
 	      }
 	      shinyjs::alert(paste('Your job "', input$job_name, '" is running. Check progress in the "Jobs" tab.', sep = ""))
-	      future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = c("MetaboAnalystR", "OptiLCMS", "RMySQL", "stringr"))
+	      if (input$debug == 0) {
+	        print("DEBUG MODE OFF")
+	        future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = .packages(TRUE))
+	      }
+	      else {
+	        metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #debug
+	      }
 	      session$reload()
-	      # metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #TEST
 	    }
 	  }
 	})
@@ -573,6 +583,9 @@ server <- function(input, output, session) {
 	#Function to process the selected MS-files
 	metaboanalyst_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pwd){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
 	  #####################
+	  file_conn = file("/exports/nas/berends.p/boloa/async_packages.txt")
+	  writeLines(c(.packages(TRUE)), file_conn)
+	  close(file_conn)
 	  send_query <- function(query){
 	    sqlconn <- dbConnect(
 	      drv = RMySQL::MySQL(),
@@ -627,8 +640,6 @@ server <- function(input, output, session) {
     	    #print(t(parameters))
     	    parameters[is.na(parameters)] <- 0
     	    def_params <- SetPeakParam(Peak_method = parameters$Peak_method, RT_method = parameters$RT_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minFraction), minSamples = as.double(parameters$minSamples), maxFeatures = as.double(parameters$maxFeatures), mzCenterFun = parameters$mzCenterFun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmConts) #verboseColumns
-    	  print(SetPeakParam(platform = "general"))
-    	  print(def_params)
     	  }
     	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/4 Importing raw spectra...' WHERE job_id = ", job_id, ";", sep = "")))
     	  rawData <- ImportRawMSData(path = files, plotSettings = SetPlotParam(Plot = FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
@@ -647,6 +658,7 @@ server <- function(input, output, session) {
     	  insert_query("processed_sample", todf)
 	    },
 	    error = function(cnd){
+	        print(cnd)
 	        send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED', end_time = '", format(Sys.time() + 60*60, "%Y-%m-%d %X"), "' WHERE job_id = ", job_id, ";", sep = "")))
 	      return(NA)
 	    }
