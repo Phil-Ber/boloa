@@ -249,7 +249,8 @@ server <- function(input, output, session) {
 		#   job_table_content$end_time[is.null(sample_table_content$end_time)] <- "-"
 		# }
 		output$jobs <- DT::renderDataTable({
-		  DT::datatable(job_table_content[, c(5, 3, 4, 2)], selection = 'single')
+		  DT::datatable(job_table_content[, c(1, 5, 3, 4, 2)], selection = 'single',
+		                rownames= FALSE)
 		}, server = FALSE)
 	})
 	
@@ -261,7 +262,8 @@ server <- function(input, output, session) {
 	  #   job_table_content$end_time[is.null(sample_table_content$end_time)] <- "-"
 	  # }
 	  output$jobs <- DT::renderDataTable({
-	    DT::datatable(job_table_content[, c(5, 3, 4, 2)], selection = 'single')
+	    DT::datatable(job_table_content[, c(1, 5, 3, 4, 2)], selection = 'single',
+	                  rownames= FALSE)
 	  }, server = FALSE)
 	})
 	
@@ -566,7 +568,6 @@ server <- function(input, output, session) {
 	      }
 	      shinyjs::alert(paste('Your job "', input$job_name, '" is running. Check progress in the "Jobs" tab.', sep = ""))
 	      if (input$debug == 0) {
-	        print("DEBUG MODE OFF")
 	        future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = .packages(TRUE))
 	      }
 	      else {
@@ -577,15 +578,25 @@ server <- function(input, output, session) {
 	  }
 	})
 	
+	#Actions involving job analysis
+	observeEvent(input$analyse, {
+	  
+	})
+	
+  mass_data_annotation <- function(){
+    
+  }
+  
+  mass_data_visualisation <- function(){
+    
+  }
+	
 	#################
 	###########       ASYNC FUNCTIONS
 	# VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
 	#Function to process the selected MS-files
 	metaboanalyst_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pwd){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
 	  #####################
-	  file_conn = file("/exports/nas/berends.p/boloa/async_packages.txt")
-	  writeLines(c(.packages(TRUE)), file_conn)
-	  close(file_conn)
 	  send_query <- function(query){
 	    sqlconn <- dbConnect(
 	      drv = RMySQL::MySQL(),
