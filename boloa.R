@@ -37,6 +37,7 @@ tryCatch(
 	# 	#pacman::p_load(c("impute", "pcaMethods", "globaltest", "GlobalAncova", "Rgraphviz", "preprocessCore", "genefilter", "SSPA", "sva", "limma", "KEGGgraph", "siggenes","BiocParallel", "MSnbase", "multtest", "RBGL", "edgeR"), character.only = TRUE)
 		pacman::p_load(c("Rserve", "ellipse", "scatterplot3d", "Cairo", "randomForest", "caTools", "e1071", "som", "impute", "pcaMethods", "RJSONIO", "ROCR", "globaltest", "GlobalAncova", "Rgraphviz", "preprocessCore", "genefilter", "pheatmap", "sva", "Rcpp", "pROC", "data.table", "limma", "car", "fitdistrplus", "lars", "Hmisc", "magrittr", "methods", "xtable", "pls", "caret", "lattice", "igraph", "gplots", "KEGGgraph", "reshape", "RColorBrewer", "tibble", "siggenes", "plotly", "xcms", "CAMERA", "fgsea", "MSnbase", "BiocParallel", "multtest", "RBGL", "edgeR", "fgsea", "crmn", "progress", "qs", "glasso"), character.only = TRUE)
 	# 	BiocManager::install("mtbls2")
+	  # install_github("berlinguyinca/spectra-hash", subdir="splashR")
 	#   #install.packages("shinyvalidate", repos="https://mirrors.evoluso.com/CRAN/")
 	# 	devtools::install_github("xia-lab/MetaboAnalystR", build = TRUE, build_vignettes = TRUE)
 	# 	devtools::install_github("xia-lab/OptiLCMS", build = TRUE, build_vignettes = FALSE, build_manual =TRUE)
@@ -591,6 +592,32 @@ server <- function(input, output, session) {
     
   }
 	
+  #xcmsSet <- mSet2xcmsSet(mSet)
+  mSet2xcmsSet <- function(mSet) {
+    #' #' This function converts an mSet object into an xcmsSet object
+    #' xs <- new("xcmsSet")
+    #' xs@peaks <- mSet@peakfilling$msFeatureData$chromPeaks
+    #' rts <- list()
+    #' if (class(mSet@rawOnDisk)[1] == "OnDiskMSnExp") {
+    #'   format <- "onDiskData"
+    #' }
+    #' else {
+    #'   format <- "inMemoryData"
+    #' }
+    #' rts$raw <- rtime(mSet@rawOnDisk)
+    #' rts$corrected <- mSet@peakfilling$msFeatureData$adjustedRT
+    #' xs@rt <- rts
+    #' xs@phenoData <- pData(mSet@rawOnDisk@phenoData)
+    #' xs@filepaths <- fileNames(mSet@rawOnDisk)
+    #' xs@mslevel <- 1
+    #' xs@scanrange <- range(scanIndex(mSet@rawOnDisk))
+    #' if (any(mSet@peakfilling$msFeatureData$chromPeakData$is_filled)) {
+    #'   fld <- which(mSet@peakfilling$msFeatureData$chromPeakData$is_filled)
+    #'   xs@filled <- as.integer(fld)
+    #' }
+    #' return(xs)
+  } 
+  
 	#################
 	###########       ASYNC FUNCTIONS
 	# VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
