@@ -211,7 +211,9 @@ ui <- fluidPage(
 			    actionButton("analyse", label = "\n Analyse job", icon=icon("play"))
 			  )
 			),
-			tabPanel("Analysis",  icon = icon("arrow-right"))
+			tabPanel("Analysis",  icon = icon("arrow-right"),
+			  uiOutput("analysis_output")
+			)
 		)
 	)
 )
@@ -581,11 +583,23 @@ server <- function(input, output, session) {
 	
 	#Actions involving job analysis
 	observeEvent(input$analyse, {
-	  
+	  mSet <- InitDataObjects("pktable", "stat", FALSE)
+	  dir <- getwd()
+	  job_id <- job_table_content[input$jobs_rows_selected, ]$job_id
+	  dir <- paste(dir, "/msets/", toString(job_id), sep = "")
+	  print(paste(dir, "/metaboanalyst_input.csv", sep = ""))
+	  mSet <- Read.TextData(mSet, paste(dir, "/metaboanalyst_input.csv", sep = ""), "colu", "disc")
+	  mSet<-SanityCheckData(mSet)
+	  mSet<-ReplaceMin(mSet)
+	  mSet<-FilterVariable(mSet, "iqr", "F", 25)
+	  mSet<-PreparePrenormData(mSet)
+	  mSet<-Normalization(mSet, "MedianNorm", "LogNorm", "NULL", ratio=FALSE, ratioNum=20)
+	  mSet <- PlotNormSummary(mSet, "norm_0_", "png", 72, width=NA)
+	  mSet <- PlotSampleNormSummary(mSet, "snorm_0_", "png", 72, width=NA)
 	})
 	
   mass_data_annotation <- function(){
-    
+    #SPLASH FUTURE
   }
   
   mass_data_visualisation <- function(){
@@ -667,9 +681,9 @@ server <- function(input, output, session) {
     	  # preset <- 3 # !!! CUSTOM PARAMETERS ARE NONFUNCTIONAL, AUTOMATIC HARDCODED. REMOVE WHEN FUNCTIONAL !!!
     	  if (preset == 3) {
     	    param_initial <- SetPeakParam(platform = "general")
-    	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '1/4 Performing ROI extraction...' WHERE job_id = ", job_id, ";", sep = "")))
+    	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '1/5 Performing ROI extraction...' WHERE job_id = ", job_id, ";", sep = "")))
     	    raw_train <- PerformROIExtraction(files, rt.idx = 0.2, rmConts = FALSE, plot = FALSE)
-    	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '2/4 Performing parameter optimization...' WHERE job_id = ", job_id, ";", sep = "")))
+    	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '2/5 Performing parameter optimization...' WHERE job_id = ", job_id, ";", sep = "")))
     	    def_params <- PerformParamsOptimization(raw_train, param = param_initial, ncore = 5)
     	    send_query(stringr::str_glue(paste("UPDATE parameter SET min_peakwidth = ", toString(def_params$min_peakwidth), ", max_peakwidth = ", toString(def_params$max_peakwidth), ", mzdiff = ", toString(def_params$mzdiff), ", snthresh = ", toString(def_params$snthresh), ", bw = ", toString(def_params$bw), ", Peak_method = '", toString(def_params$Peak_method), "', ppm = ", toString(def_params$ppm), ", noise = ", toString(def_params$noise), ", prefilter = ", toString(def_params$prefilter), ", value_of_prefilter = ", toString(def_params$value_of_prefilter), ", minFraction = ", toString(def_params$minFraction), ", minSamples = ", toString(def_params$minSamples), ", maxFeatures = ", toString(def_params$maxFeatures), ", fitgauss = ", toString(def_params$fitgauss), ", mzCenterFun = '", toString(def_params$mzCenterFun), "', integrate = ", toString(def_params$integrate), ", extra = ", toString(def_params$extra), ", span = ", toString(def_params$span), ", smooth = '", toString(def_params$smooth), "', family = '", toString(def_params$family), "', polarity = '", toString(def_params$polarity), "', perc_fwhm = ", toString(def_params$perc_fwhm), ", max_charge = ", toString(def_params$max_charge), ", max_iso = ", toString(def_params$max_iso), ", corr_eic_th = ", toString(def_params$corr_eic_th), ", mz_abs_add = ", toString(def_params$mz_abs_add), ", rmConts = ", toString(def_params$rmConts), ", RT_method = '", toString(def_params$RT_method), "' WHERE job_id = ", job_id, ";", sep = "")))
     	  }
@@ -679,21 +693,29 @@ server <- function(input, output, session) {
     	    parameters[is.na(parameters)] <- 0
     	    def_params <- SetPeakParam(Peak_method = parameters$Peak_method, RT_method = parameters$RT_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minFraction), minSamples = as.double(parameters$minSamples), maxFeatures = as.double(parameters$maxFeatures), mzCenterFun = parameters$mzCenterFun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmConts) #verboseColumns
     	  }
-    	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/4 Importing raw spectra...' WHERE job_id = ", job_id, ";", sep = "")))
+    	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/5 Importing raw spectra...' WHERE job_id = ", job_id, ";", sep = "")))
     	  rawData <- ImportRawMSData(path = files, plotSettings = SetPlotParam(Plot = FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
-    	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '4/4 Performing peak profiling...' WHERE job_id = ", job_id, ";", sep = "")))
+    	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '4/5 Performing peak profiling...' WHERE job_id = ", job_id, ";", sep = "")))
     	  mSet <- PerformPeakProfiling(rawData, def_params, plotSettings = SetPlotParam(Plot = FALSE))
+    	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '5/5 Performing peak annotation...' WHERE job_id = ", job_id, ";", sep = "")))
+    	  annParams <- SetAnnotationParam(polarity = def_params$polarity, mz_abs_add = def_params$mz_abs_add)
+    	  annotPeaks <- PerformPeakAnnotation(mSet, annParams)
+    	  maPeaks <- FormatPeakList(annotPeaks, annParams, filtIso =F, filtAdducts = FALSE, missPercent = 1)
     	  end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
     	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'Finished' WHERE job_id = ", job_id, ";", sep = "")))
     	  send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
     	  dir <- getwd()
     	  dir <- paste(dir, "/msets/", toString(job_id), sep = "")
-    	  save(mSet, file = paste(dir, ".rda", sep = ""))
+    	  dir.create(dir)
+    	  Export.PeakTable(mSet = maPeaks, path = dir)
+    	  save(mSet, file = paste(dir, "/mSet.rda", sep = ""))
     	  todf <- data.frame(
     	    job_id = toString(job_id),
-    	    file_path = toString(paste(dir, ".rda", sep = ""))
+    	    file_path_rda = toString(paste(dir, "/mSet.rda", sep = "")),
+    	    file_path_peaks = toString(paste(dir, "/", sep = ""))
     	  )
     	  insert_query("processed_sample", todf)
+    	  
 	    },
 	    error = function(cnd){
 	        print(cnd)

@@ -93,7 +93,8 @@ def make_processed_sample():
 	cur.execute("DROP TABLE IF EXISTS processed_sample;")
 	cur.execute("CREATE TABLE processed_sample ("
       "job_id INT PRIMARY KEY, "
-      "file_path VARCHAR(100), "
+      "file_path_rda VARCHAR(100), "
+      "file_path_peaks VARCHAR(100), "
       "FOREIGN KEY (job_id) REFERENCES job(job_id) ON DELETE CASCADE"
     ");"
 	)
