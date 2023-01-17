@@ -584,6 +584,7 @@ server <- function(input, output, session) {
 	#Actions involving job analysis
 	observeEvent(input$analyse, {
 	  mSet <- InitDataObjects("pktable", "stat", FALSE)
+	  print(mSet)
 	  dir <- getwd()
 	  job_id <- job_table_content[input$jobs_rows_selected, ]$job_id
 	  dir <- paste(dir, "/msets/", toString(job_id), sep = "")
