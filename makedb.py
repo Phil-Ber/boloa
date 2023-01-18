@@ -29,7 +29,8 @@ def make_sample():
 			"sample_hash VARCHAR(100) PRIMARY KEY, "
 			"file_path VARCHAR(400), "
 			"upload_date DATETIME, "
-			"sample_name VARCHAR(100), "
+			"uploaded_by VARCHAR(100), "
+			"metadata VARCHAR(100),"
 			"chromatography_type TINYINT, "
 			"original_file_name VARCHAR(400)"
 		");"
@@ -115,11 +116,11 @@ def make_sample_job():
 
 cur.execute("SET GLOBAL local_infile=1;")
 cur.execute("SET FOREIGN_KEY_CHECKS=0;")
-#import os
-#dir_path = os.path.dirname(os.path.realpath(__file__))
-#bash_remove = f"rm {dir_path}/massascans/*.mzXML"
-#os.system(bash_remove)
-#make_sample()
+import os
+dir_path = os.path.dirname(os.path.realpath(__file__))
+bash_remove = f"rm {dir_path}/massascans/*.mzXML"
+os.system(bash_remove)
+make_sample()
 make_parameter()
 make_job()
 make_processed_sample()

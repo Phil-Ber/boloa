@@ -112,12 +112,12 @@ ui <- fluidPage(
 				fluidRow(
 					column(3,
 						br(),
-						textInput("title", label = "Sample description(s)"),
+						textInput("uploaded_by", label = "Uploaded by:"),
 						h4("Mass Spectrometry data:"),
 						fileInput("msdata", label = "MS-data", multiple = TRUE, accept = c(".mzXML", ".raw", ".CDF")),
-						tableOutput("bestanden"),
+						#DT::dataTableOutput("fileOverview"),
+						uiOutput("fileOverview", style='margin-top:20px; border-top:1px solid #dfd7ca; margin-bottom:20px; border-bottom:1px solid #dfd7ca;'),
 						actionButton("dataupl", label = "Submit", width = 180),
-						br(),
 						verbatimTextOutput("upl_completed"),
 						style='margin-bottom:30px;border-right:1px solid #dfd7ca;; padding: 10px;'
 					),
@@ -221,16 +221,24 @@ ui <- fluidPage(
 
 
 server <- function(input, output, session) {
-  
+  nr_files <<- 0
 	#Weergave van geuploade bestand(en)
 	observeEvent(input$msdata, {
-		output$bestanden <- renderTable({
+		output$fileOverview <- renderUI({
 			file <- input$msdata
 			ext <- tools::file_ext(file$datapath)
 			req(file)
 			validate(need(ext %in% c("raw", "mzXML", "CDF"), "Please upload a .raw, .CDF or .mzXML file!"))
-		})
-	})
+			nr_files <<- length(file[,3])
+			lapply(1:nr_files, function(i) {
+			  if (i == 1) {
+			    p('Please edit file metadata (REQUIRED!)')
+			  }
+			  textInput(inputId = paste("meta", i, sep = ""), label = paste(i, ": ", file[i, 1], sep = ""))
+			})
+		#}#, server = FALSE)
+  	})
+  })
   
 	#Update van tabel op "Upload data" tab
 	updateEvent <- reactive({
@@ -239,12 +247,12 @@ server <- function(input, output, session) {
 	
 	#Sample selection table
 	observeEvent(updateEvent, {
-		query <- stringr::str_glue("SELECT upload_date, original_file_name, sample_hash, sample_name, chromatography_type FROM sample ORDER BY upload_date DESC;")
+		query <- stringr::str_glue("SELECT * FROM sample ORDER BY upload_date DESC;")
 		sample_table_content <<- get_query(query)
 		sample_table_content$chromatography_type[sample_table_content$chromatography_type == 1] <- "Liquid"
 		sample_table_content$chromatography_type[sample_table_content$chromatography_type == 2] <- "Gas"
 		output$uploaded_samples <- DT::renderDataTable({
-			DT::datatable(sample_table_content[, c(1, 2, 4, 5)])
+			DT::datatable(sample_table_content[, c(7, 3, 5, 4, 6)])
 		}, server = FALSE)
 		query <- stringr::str_glue("SELECT * FROM job ORDER BY start_time DESC;")
 		job_table_content <<- get_query(query)
@@ -318,81 +326,111 @@ server <- function(input, output, session) {
 	
 	#Handelingen als data ingevoerd is ---
 	observeEvent(input$dataupl, {
-		if (is.null(input$msdata)) {
+	  if (nchar(input$uploaded_by) == 0){
+	    output$upl_completed <- renderText({
+	      "Please input your name."
+	    })
+	    return()
+	  }
+		if (nr_files == 0) {
 			output$upl_completed <- renderText({
 				'Please upload a file'
 			})
+			return()
 		}
-		if (nchar(input$title) != 0 && is.null(input$msdata) != TRUE) {
-			dir <- getwd()
-			dir <- paste(dir, "/massascans", sep = "")
-			#aanmaak metadata object
-			file <- input$msdata
-			time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
-			count <- 0
-			progress <- shiny::Progress$new()
-			on.exit(progress$close())
-			progress$set(message = "Uploading", value = 0)
-			for (fileloc in file$datapath) {
-			  progress$inc(1/length(file$datapath), detail = paste("File:", file$name[count + 1]))
-				file.copy(fileloc, dir)
-				upload_file <- function(countUF, filelocUF, dirUF, timeUF, titleUF, filenamesUF){
-  				if (grepl('.raw', filelocUF, fixed=TRUE)) {
-  					system(paste("docker run -it --rm -v ", dirUF, ":/massascans chambm/pwiz-skyline-i-agree-to-the-vendor-licenses wine msconvert /massascans/", countUF, ".raw", " --mzXML -o /massascans", sep = "")) #change .raw files to .mzXML
-  					system(paste("rm ", dirUF, "/", countUF, ".raw", sep = ""))
+	  invalid_metadata <- FALSE
+	  for (i in 1:nr_files) {
+	    metastring <- gsub("[^[:alnum:][:space:]]", "", input[[paste("meta", i, sep = "")]])
+	    if (metastring == "") {
+	      output$upl_completed <- renderText({
+	        paste('Please assign a label to all files consisting of only letters [Aa-Zz] and numbers [0-9]. \nError: ', input[[paste("meta", i, sep = "")]], sep = "")
+	      }) 
+	      invalid_metadata <- TRUE
+	      return()
+	    }
+	  }
+		dir <- getwd()
+		dir <- paste(dir, "/massascans", sep = "")
+		#aanmaak metadata object
+		file <- input$msdata
+		time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
+		count <- 0
+		progress <- shiny::Progress$new()
+		on.exit(progress$close())
+		progress$set(message = "Uploading", value = 0)
+		for (fileloc in file$datapath) {
+		  progress$inc(1/length(file$datapath), detail = paste("File:", file$name[count + 1]))
+			upload_file <- function(countUF, filelocUF, dirUF, timeUF, uploaded_byUF, filenamesUF, metadataUF){
+			  dirUF <- paste(dirUF, "/", metadataUF, sep = "")
+			  dir.create(dirUF)
+			  file.copy(filelocUF, dirUF)
+  			if (grepl('.raw', filelocUF, fixed=TRUE)) {
+  				system(paste("docker run -it --rm -v ", dirUF, ":/", metadataUF," chambm/pwiz-skyline-i-agree-to-the-vendor-licenses wine msconvert /", metadataUF,"/", countUF, ".raw", " --mzXML -o /", metadataUF, sep = "")) #change .raw files to .mzXML
+  				system(paste("rm ", dirUF, "/", countUF, ".raw", sep = ""))
+  				filetype <- ".mzXML"
+  			}
+			  if (grepl('.mzXML', filelocUF, fixed=TRUE)) {
+			    filetype <- ".mzXML"
+			  }
+			  if (grepl('.CDF', filelocUF, fixed=TRUE)) {
+			    filetype <- ".CDF"
+			  }
+  			hash <- system(paste("sha224sum ", paste(dirUF, "/", countUF, filetype, sep = ""), " | awk '{print $1}'", sep = ""), intern=TRUE)
+  			if (hash %in% sample_table_content[, 1]) {
+  			  print("sample already present")
+  			  system(paste("rm ", dirUF, "/", countUF, ".mzXML", sep = ""))
+  			}
+  			else {
+    			file.rename(paste(dirUF, "/", countUF, filetype, sep = ""), paste(dirUF, "/", tools::file_path_sans_ext(filenamesUF[countUF + 1]), filetype, sep = ""))
+    			filepath <- toString(paste(dirUF, "/", tools::file_path_sans_ext(filenamesUF[countUF + 1]), filetype, sep = ""))
+    			tryCatch(
+    				{
+    					aa <- openMSfile(filepath)
+    					aai <- instrumentInfo(aa)
+    					test.empty <- header(aa)
+    					test.empty <- test.empty$lowMZ
+    					on.exit(close(aa))
+    					close(aa)
+    					if (length(test.empty) == 0) {
+    					  shinyjs::alert(paste(toString(file$name[countUF + 1]), " is empty! Please refrain from uploading empty MS-files!"))
+    					  file.remove(filepath)
+    					}
+    					if (length(test.empty) > 1) {
+    					  if (aai$ionisation == "electrospray ionization") {
+    					    chromtype <- 1
+    					  } else {
+    					    chromtype <- 2
+    					  }
+    					  todf <- data.frame(
+    					    sample_hash = toString(hash),
+    					    file_path = toString(filepath),
+    					    upload_date = toString(timeUF),
+    					    uploaded_by = toString(uploaded_byUF),
+    					    metadata = toString(metadataUF),
+    					    chromatography_type = toString(chromtype),
+    					    original_file_name = toString(tools::file_path_sans_ext(filenamesUF[countUF + 1]))
+    					  )
+    					  insert_query("sample", todf)
+    					}
+    				},
+  				error = function(cnd){
+  		  		file.remove(filepath)
+  				  system("echo ERROR")
+  				  print("REMOVED FILE")
+  		  		return(NA)
   				}
-				  if (grepl('.mzXML', filelocUF, fixed=TRUE)) {
-				    filetype <- ".mzXML"
-				  }
-				  if (grepl('.CDF', filelocUF, fixed=TRUE)) {
-				    filetype <- ".CDF"
-				  }
-  				hash <- system(paste("sha224sum ", paste(dirUF, "/", countUF, filetype, sep = ""), " | awk '{print $1}'", sep = ""), intern=TRUE)
-  				file.rename(paste(dirUF, "/", countUF, filetype, sep = ""), paste(dirUF, "/", hash, filetype, sep = ""))
-  				filepath <- toString(paste(dirUF, "/", hash, filetype, sep = ""))
-  				tryCatch(
-  					{
-  						aa <- openMSfile(filepath)
-  						aai <- instrumentInfo(aa)
-  						test.empty <- header(aa)
-  						test.empty <- test.empty$lowMZ
-  						on.exit(close(aa))
-  						close(aa)
-  						if (length(test.empty) == 0) {
-  						  shinyjs::alert(paste(toString(file$name[countUF + 1]), " is empty! Please refrain from uploading empty MS-files!"))
-  						  file.remove(filepath)
-  						}
-  						if (length(test.empty) > 1) {
-  						  if (aai$ionisation == "electrospray ionization") {
-  						    chromtype <- 1
-  						  } else {
-  						    chromtype <- 2
-  						  }
-  						  todf <- data.frame(
-  						    sample_hash = toString(hash),
-  						    file_path = toString(filepath),
-  						    upload_date = toString(timeUF),
-  						    sample_name = toString(titleUF),
-  						    chromatography_type = toString(chromtype),
-  						    original_file_name = toString(filenamesUF[countUF + 1])
-  						  )
-  						  insert_query("sample", todf)
-  						}
-  					},
-  					error = function(cnd){
-  			  		file.remove(filepath)
-  					  system("echo ERROR")
-  					  print("REMOVED FILE")
-  			  		return(NA)
-  					}
-  				)
-				}
-				upload_file(count, fileloc, dir, time, input$title, file$name) #for potential async useage
-				count <- count + 1
+  			  )
+  			}
 			}
-			shinyjs::alert('Data upload completed.\nSelect samples from the table in order to continue analysis.')
-			session$reload()
-  	}
+			#for potential async useage
+			upload_file(count, fileloc, dir, time, input$uploaded_by, file$name,
+			            gsub("[^[:alnum:][:space:]]", "",
+			                 input[[paste("meta", count + 1, sep = "")]]))
+		  count <- count + 1
+		}
+		shinyjs::alert('Data upload completed.\nSelect samples from 
+		               the table in order to continue analysis.')
+		session$reload()
 	})
   
 	#Update table to selected datatype
@@ -402,7 +440,7 @@ server <- function(input, output, session) {
 	    selsamples <<- selsamples[selsamples$chromatography_type == input$datatype,]
 	    selsamples$chromatography_type[selsamples$chromatography_type == 1] <- "Liquid"
 	    selsamples$chromatography_type[selsamples$chromatography_type == 2] <- "Gas"
-	    DT::datatable(selsamples[, c(1, 2, 4, 5)], selection = 'single')
+	    DT::datatable(selsamples[, c(7, 3, 5, 4, 6)], selection = 'single')
 	  }, server = FALSE)
 	  output$previewplot <- renderUI({
 	    return(NULL)
