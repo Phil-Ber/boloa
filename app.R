@@ -100,7 +100,8 @@ all_params <- c("Peak_method", "RT_method", "mzdiff", "snthresh", "bw", "ppm", "
 lcms_only <- tail(all_params, n=9)
 
 
-ui <- fluidPage(
+ui <- fillPage(
+  padding = NULL,
   autoWaiter(color = "white", html = spin_3()),
   
 	useShinyjs(),
@@ -108,13 +109,13 @@ ui <- fluidPage(
 	mainPanel(
 		titlePanel("Boloa"),
 		tabsetPanel(id = "tabSwitch",
-			tabPanel("Select data",  icon = icon("arrow-right"),
+			tabPanel("Select data",  icon = icon("arrow-right"), style='width:100vw;height:100vh;overflow-y: scroll;',
 				fluidRow(
 					column(3,
 						br(),
 						textInput("uploaded_by", label = "Uploaded by:"),
 						h4("Mass Spectrometry data:"),
-						fileInput("msdata", label = "MS-data", multiple = TRUE, accept = c(".mzXML", ".raw", ".CDF")),
+						fileInput("msdata", label = "MS-data", multiple = TRUE, accept = c(".mzXML", ".raw")),#, ".CDF")),
 						#DT::dataTableOutput("fileOverview"),
 						uiOutput("fileOverview", style='margin-top:20px; border-top:1px solid #dfd7ca; margin-bottom:20px; border-bottom:1px solid #dfd7ca;'),
 						actionButton("dataupl", label = "Submit", width = 180),
@@ -126,7 +127,7 @@ ui <- fluidPage(
 					)
 				)
 			),
-			tabPanel("Process data", icon = icon("arrow-right"),
+			tabPanel("Process data", icon = icon("arrow-right"), style='width:100vw;height:100vh;overflow-y: scroll;',
 				fluidRow(
 					column(7,
   		      radioButtons("datatype", label = "Select correct chromatography type in order to properly display data:",
@@ -203,7 +204,7 @@ ui <- fluidPage(
 					column(4)
 				)
 			),
-			tabPanel("Jobs", icon = icon("arrow-right"),
+			tabPanel("Jobs", icon = icon("arrow-right"), style='width:100vw;height:100vh;overflow-y: scroll;',
 			  fluidRow(
 			    h4("Select a job to analyse contents:"),
 			    DT::dataTableOutput("jobs"),
@@ -211,7 +212,7 @@ ui <- fluidPage(
 			    actionButton("analyse", label = "\n Analyse job", icon=icon("play"))
 			  )
 			),
-			tabPanel("Analysis",  icon = icon("arrow-right"),
+			tabPanel("Analysis",  icon = icon("arrow-right"), style='width:100vw;height:100vh;overflow-y: scroll;',
 			  uiOutput("analysis_output")
 			)
 		)
@@ -256,9 +257,6 @@ server <- function(input, output, session) {
 		}, server = FALSE)
 		query <- stringr::str_glue("SELECT * FROM job ORDER BY start_time DESC;")
 		job_table_content <<- get_query(query)
-		# if (length(job_table_content[, 1]) != 0) {
-		#   job_table_content$end_time[is.null(sample_table_content$end_time)] <- "-"
-		# }
 		output$jobs <- DT::renderDataTable({
 		  DT::datatable(job_table_content[, c(1, 5, 3, 4, 2)], selection = 'single',
 		                rownames= FALSE)
@@ -334,7 +332,7 @@ server <- function(input, output, session) {
 	  }
 		if (nr_files == 0) {
 			output$upl_completed <- renderText({
-				'Please upload a file'
+				'Please upload a file.'
 			})
 			return()
 		}
@@ -377,7 +375,7 @@ server <- function(input, output, session) {
 			  }
   			hash <- system(paste("sha224sum ", paste(dirUF, "/", countUF, filetype, sep = ""), " | awk '{print $1}'", sep = ""), intern=TRUE)
   			if (hash %in% sample_table_content[, 1]) {
-  			  print("sample already present")
+  			  print("Sample already present!")
   			  system(paste("rm ", dirUF, "/", countUF, ".mzXML", sep = ""))
   			}
   			else {
@@ -401,6 +399,8 @@ server <- function(input, output, session) {
     					  } else {
     					    chromtype <- 2
     					  }
+    					  ogXCMSset <- readMSData(filepath, mode = "onDisk")
+    					  saveRDS(ogXCMSset, paste(dirUF, "/", hash, ".rds", sep = ""))
     					  todf <- data.frame(
     					    sample_hash = toString(hash),
     					    file_path = toString(filepath),
@@ -408,7 +408,8 @@ server <- function(input, output, session) {
     					    uploaded_by = toString(uploaded_byUF),
     					    metadata = toString(metadataUF),
     					    chromatography_type = toString(chromtype),
-    					    original_file_name = toString(tools::file_path_sans_ext(filenamesUF[countUF + 1]))
+    					    original_file_name = toString(tools::file_path_sans_ext(filenamesUF[countUF + 1])),
+    					    original_XCMSnExp_path = toString(paste(dirUF, "/", hash, ".rds", sep = ""))
     					  )
     					  insert_query("sample", todf)
     					}
@@ -428,7 +429,7 @@ server <- function(input, output, session) {
 			                 input[[paste("meta", count + 1, sep = "")]]))
 		  count <- count + 1
 		}
-		shinyjs::alert('Data upload completed.\nSelect samples from 
+		shinyjs::alert('Data upload completed. Select samples from 
 		               the table in order to continue analysis.')
 		session$reload()
 	})
@@ -440,14 +441,48 @@ server <- function(input, output, session) {
 	    selsamples <<- selsamples[selsamples$chromatography_type == input$datatype,]
 	    selsamples$chromatography_type[selsamples$chromatography_type == 1] <- "Liquid"
 	    selsamples$chromatography_type[selsamples$chromatography_type == 2] <- "Gas"
+	    if (input$tabSwitch == "Process data") {
+	      if (length(selsamples$sample_hash) >= 1){
+	        preview_files <- selsamples$sample_hash
+	        filequery <- paste("sample_hash = '", preview_files[1], "'", sep = "")
+	        if (length(selsamples >= 2)){
+	          for (file in preview_files[2:length(preview_files)]) {
+	            filequery <- paste(filequery, " OR sample_hash = '", file, "'", sep = "")
+	          }
+	        }
+	        query <- stringr::str_glue("SELECT file_path, original_file_name, original_XCMSnExp_path FROM sample WHERE ", filequery, ";")
+	        selection <- get_query(query)
+	        #Render TIC(s)
+	        output$ticplot <- renderPlotly({
+	          chrom <- plot_ly(x = NULL, y = NULL, type = 'scatter', mode = 'lines', fill = 'tozeroy') %>% layout(title = "Total Ion Current", xaxis = list(title = "Retention time (seconds)"), yaxis = list(title = "TotIonCurrent"))
+	          for (i in 1:length(preview_files)){
+	            aa <- readRDS(selection$original_XCMSnExp_path[i], refhook = NULL)
+	            y <- aa@featureData@data$totIonCurrent
+	            x <- aa@featureData@data$retentionTime
+	            chrom <- chrom %>% add_lines(x = x, y = y, name = selection$original_file_name[i])
+	          }
+	          chrom
+	        })
+	      }
+	      else{
+	        output$ticplot <- renderPlotly({
+	          return(NULL)
+	        })
+	      }
+	      output$previewplot <- renderUI({
+	        return(NULL)
+	      })
+	    }
+	    else{
+	      output$ticplot <- renderPlotly({
+	        return(NULL)
+	      })
+	    }
+	    output$previewplot <- renderUI({
+	      return(NULL)
+	    })
 	    DT::datatable(selsamples[, c(7, 3, 5, 4, 6)], selection = 'single')
 	  }, server = FALSE)
-	  output$previewplot <- renderUI({
-	    return(NULL)
-	  })
-	  output$ticplot <- renderPlotly({
-	    return(NULL)
-	  })
 	})
 	
 	#Updata parameter usage to datatype and preset selection
@@ -492,28 +527,10 @@ server <- function(input, output, session) {
 	  output$previewplot <- renderUI({
 	    return(NULL)
 	  })
-	  output$ticplot <- renderPlotly({
-	    return(NULL)
-	  })
 		if (is.null(input$selected_samples_rows_selected)) {
 			shinyjs::disable("preview")
 		}
 		else {
-		  preview_file <- selsamples[input$selected_samples_rows_selected, ]$sample_hash
-		  query <- stringr::str_glue("SELECT file_path FROM sample WHERE sample_hash = '", preview_file, "';")
-		  aa <- openMSfile(get_query(query)$file_path)
-		  on.exit(close(aa))
-		  aahead <- header(aa)
-		  y <- aahead$totIonCurrent
-		  x <- aahead$retentionTime
-		  close(aa)
-		  output$chromrange <- renderUI({
-		    sliderInput("chromrange", "Retention time range:", min = min(x), max = max(x), value = c(min(x), max(x)))
-		  })
-		  #Render TIC
-		  output$ticplot <- renderPlotly({
-		    plot_ly(data = data.frame(x,y), x = ~x, y = ~y, type = 'scatter', mode = 'lines', fill = 'tozeroy') %>% layout(title = "Total Ion Current", xaxis = list(title = "Retention time (seconds)"), yaxis = list(title = "TotIonCurrent"))
-		  })
 			shinyjs::enable("preview")
 		}
 	})
@@ -608,24 +625,30 @@ server <- function(input, output, session) {
 	        sample_number <- sample_number + 1
 	      }
 	      shinyjs::alert(paste('Your job "', input$job_name, '" is running. Check progress in the "Jobs" tab.', sep = ""))
-	      if (input$debug == 0) {
-	        future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = .packages(TRUE))
-	      }
-	      else {
-	        metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #debug
-	      }
-	      session$reload()
+	      xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 6)
+	      # if (input$debug == 0) {
+	      #   future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = .packages(TRUE))
+	      # }
+	      # else {
+	      #   metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #debug
+	      # }
+	      # session$reload()
 	    }
 	  }
 	})
 	
 	#Actions involving job analysis
 	observeEvent(input$analyse, {
-	  mSet <- InitDataObjects("pktable", "stat", FALSE)
+	  job_id <- job_table_content[input$jobs_rows_selected, ]$job_id
+	  # query <- stringr::str_glue(paste("SELECT file_path_rda FROM processed_sample WHERE job_id = ", job_id, ";", sep = ""))
+	  # rda_path <- get_query(query)
+	  # load(file=toString(rda_path$file_path_rda))
+	  # print(mSet)
+	  mSet <- InitDataObjects(data.type = "pktable", anal.type = "stat", FALSE)
 	  print(mSet)
 	  dir <- getwd()
-	  job_id <- job_table_content[input$jobs_rows_selected, ]$job_id
 	  dir <- paste(dir, "/msets/", toString(job_id), sep = "")
+	  setwd(dir)
 	  print(paste(dir, "/metaboanalyst_input.csv", sep = ""))
 	  mSet <- Read.TextData(mSet, paste(dir, "/metaboanalyst_input.csv", sep = ""), "colu", "disc")
 	  mSet<-SanityCheckData(mSet)
@@ -648,8 +671,8 @@ server <- function(input, output, session) {
   #xcmsSet <- mSet2xcmsSet(mSet)
   mSet2xcmsSet <- function(mSet) {
     #' #' This function converts an mSet object into an xcmsSet object
-    #' xs <- new("xcmsSet")
-    #' xs@peaks <- mSet@peakfilling$msFeatureData$chromPeaks
+    #' xs <- new("XCMSnExpms")
+    #' xs@chromPeaks <- mSet@peakfilling$msFeatureData$chromPeaks
     #' rts <- list()
     #' if (class(mSet@rawOnDisk)[1] == "OnDiskMSnExp") {
     #'   format <- "onDiskData"
@@ -751,7 +774,7 @@ server <- function(input, output, session) {
     	  todf <- data.frame(
     	    job_id = toString(job_id),
     	    file_path_rda = toString(paste(dir, "/mSet.rda", sep = "")),
-    	    file_path_peaks = toString(paste(dir, "/", sep = ""))
+    	    file_path_peaks = toString(paste(dir, "/", "metaboanalyst_input.csv", sep = ""))
     	  )
     	  insert_query("processed_sample", todf)
     	  
@@ -764,6 +787,147 @@ server <- function(input, output, session) {
 	  )
 	}
 
+  xcms_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pw, job_plan){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
+    #####################
+    send_query <- function(query){
+      sqlconn <- dbConnect(
+        drv = RMySQL::MySQL(),
+        dbname='boloa',
+        host="127.0.0.1",
+        port=3306,
+        user=db_usr,
+        password=db_pwd
+      )
+      on.exit(dbDisconnect(sqlconn))
+      dbSendQuery(sqlconn, query)
+    }
+    insert_query <- function(tb_name, data){
+      sqlconn <- dbConnect(
+        drv = RMySQL::MySQL(),
+        dbname='boloa',
+        host="127.0.0.1",
+        port=3306,
+        user=db_usr,
+        password=db_pwd
+      )
+      on.exit(dbDisconnect(sqlconn))
+      dbWriteTable(sqlconn, tb_name, data, append = TRUE, row.names = FALSE)
+    }
+    get_query <- function(query){
+      sqlconn <- dbConnect(
+        drv = RMySQL::MySQL(),
+        dbname='boloa',
+        host="127.0.0.1",
+        port=3306,
+        user=db_usr,
+        password=db_pwd
+      )
+      on.exit(dbDisconnect(sqlconn))
+      dbGetQuery(sqlconn, query)
+    }
+    ################
+    tryCatch(
+      {
+        files <- massfiles$file_path
+        if (preset == 3) {
+          param_initial <- SetPeakParam(platform = "general")
+          send_query(stringr::str_glue(paste("UPDATE job SET job_status = '1/5 Performing ROI extraction...' WHERE job_id = ", job_id, ";", sep = "")))
+          raw_train <- PerformROIExtraction(files, rt.idx = 0.2, rmConts = FALSE, plot = FALSE)
+          send_query(stringr::str_glue(paste("UPDATE job SET job_status = '2/5 Performing parameter optimization...' WHERE job_id = ", job_id, ";", sep = "")))
+          def_params <- PerformParamsOptimization(raw_train, param = param_initial, ncore = 5)
+          send_query(stringr::str_glue(paste("UPDATE parameter SET min_peakwidth = ", toString(def_params$min_peakwidth), ", max_peakwidth = ", toString(def_params$max_peakwidth), ", mzdiff = ", toString(def_params$mzdiff), ", snthresh = ", toString(def_params$snthresh), ", bw = ", toString(def_params$bw), ", Peak_method = '", toString(def_params$Peak_method), "', ppm = ", toString(def_params$ppm), ", noise = ", toString(def_params$noise), ", prefilter = ", toString(def_params$prefilter), ", value_of_prefilter = ", toString(def_params$value_of_prefilter), ", minFraction = ", toString(def_params$minFraction), ", minSamples = ", toString(def_params$minSamples), ", maxFeatures = ", toString(def_params$maxFeatures), ", fitgauss = ", toString(def_params$fitgauss), ", mzCenterFun = '", toString(def_params$mzCenterFun), "', integrate = ", toString(def_params$integrate), ", extra = ", toString(def_params$extra), ", span = ", toString(def_params$span), ", smooth = '", toString(def_params$smooth), "', family = '", toString(def_params$family), "', polarity = '", toString(def_params$polarity), "', perc_fwhm = ", toString(def_params$perc_fwhm), ", max_charge = ", toString(def_params$max_charge), ", max_iso = ", toString(def_params$max_iso), ", corr_eic_th = ", toString(def_params$corr_eic_th), ", mz_abs_add = ", toString(def_params$mz_abs_add), ", rmConts = ", toString(def_params$rmConts), ", RT_method = '", toString(def_params$RT_method), "' WHERE job_id = ", job_id, ";", sep = "")))
+        }
+        else {
+          parameters[is.na(parameters)] <- 0
+          def_params <- SetPeakParam(Peak_method = parameters$Peak_method, RT_method = parameters$RT_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minFraction), minSamples = as.double(parameters$minSamples), maxFeatures = as.double(parameters$maxFeatures), mzCenterFun = parameters$mzCenterFun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmConts) #verboseColumns
+        }
+        #processing
+        if (job_plan >= 1 | job_plan == 6){
+          #Load raw files into XCMSnExp-object
+          pd <- data.frame(sample_name = massfiles$original_file_name,
+                           sample_group = massfiles$metadata,
+                           stringsAsFactors = FALSE)
+          xset <- readMSData(files = files, pdata = new("NAnnotatedDataFrame", pd), mode = "onDisk")
+        }
+        if (job_plan >= 2 | job_plan == 6){
+          #Find peaks
+          if (def_params$Peak_method == "centWave"){
+            peak_params <- CentWaveParam(
+              ppm = def_params$ppm,
+              peakwidth = c(def_params$min_peakwidth, def_params$max_peakwidth),
+              snthresh = def_params$snthresh,
+              prefilter = c(def_params$prefilter, def_params$value_of_prefilter),
+              mzCenterFun = def_params$mzCenterFun,
+              integrate = def_params$integrate,
+              mzdiff = def_params$mzdiff,
+              fitgauss = def_params$fitgauss,
+              noise = def_params$noise
+              #verboseColumns = def_params$verboseColumns
+              #roiList = list(),
+              #firstBaselineCheck = TRUE,
+              #roiScales = numeric(),
+              #extendLengthMSW = FALSE
+              
+            )
+          }
+          else if (def_params$Peak_method == "Massifquant"){
+            peak_params <- MassifquantParam(
+              ppm = def_params$ppm,
+              peakwidth = c(def_params$min_peakwidth, def_params$max_peakwidth),
+              snthresh = def_params$snthresh,
+              prefilter = c(def_params$prefilter, def_params$value_of_prefilter),
+              mzCenterFun = def_params$mzCenterFun,
+              integrate = def_params$integrate,
+              mzdiff = def_params$mzdiff,
+              fitgauss = def_params$fitgauss,
+              noise = def_params$noise,
+              #verboseColumns = def_params$ppm,
+              #criticalValue = def_params$ppm,
+              #consecMissedLimit = def_params$ppm,
+              #unions = def_params$ppm,
+              #checkBack = def_params$ppm,
+              #withWave = def_params$ppm
+            )
+          }
+          else if (def_params$Peak_method == "MatchedFilter"){
+            peak_params <- MatchedFilterParam(
+              #binSize = def_params$ppm,
+              #impute = def_params$ppm,
+              #baseValue = def_params$ppm,
+              #distance = def_params$ppm,
+              #fwhm = def_params$ppm,
+              #sigma = fwhm/def_params$ppm,
+              #max = def_params$ppm,
+              snthresh = def_params$snthresh,
+              #steps = def_params$ppm,
+              #mzdiff = def_params$mzdiff - binSize * steps,
+              #index = def_params$ppm
+            )
+          }
+          else {
+            return()
+          }
+          xset <-findChromPeaks(xset, param = peak_params)
+          print(head(chromPeaks(xset)))
+        }
+        if (job_plan >= 3 | job_plan == 6){
+          #Peak alignment
+        }
+        if (job_plan >= 4 | job_plan == 6){
+          #Peak filling
+        }
+        if (job_plan >= 5 | job_plan == 6){
+        }
+        if (job_plan == 6){
+        }
+      },
+      error = function(cnd){
+        print(cnd)
+        send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED', end_time = '", format(Sys.time() + 60*60, "%Y-%m-%d %X"), "' WHERE job_id = ", job_id, ";", sep = "")))
+        return(NA)
+      }
+    )
+  }
 }
 
 runApp(shinyApp(ui = ui, server = server), host = hostip, port = portnr)
