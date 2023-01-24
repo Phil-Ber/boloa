@@ -29,7 +29,7 @@ def make_sample():
 			"sample_hash VARCHAR(100) PRIMARY KEY, "
 			"file_path VARCHAR(400), "
 			"upload_date DATETIME, "
-			"uploaded_by VARCHAR(100), "
+			"sample_description VARCHAR(100), "
 			"metadata VARCHAR(100),"
 			"chromatography_type TINYINT, "
 			"original_file_name VARCHAR(400), "
