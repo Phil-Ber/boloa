@@ -349,93 +349,157 @@ server <- function(input, output, session) {
 	      return()
 	    }
 	  }
+	  output$upl_completed <- renderText({
+	    "Files uploading, please be patient...."
+	  })
+	  file_tags <- c()
+	  for (i in 1:nr_files){
+	    file_tags <- c(file_tags, gsub("[^[:alnum:][:space:]]", "", input[[paste("meta", i, sep = "")]]))
+	  }
 		dir <- getwd()
 		dir <- paste(dir, "/massascans", sep = "")
 		#aanmaak metadata object
 		file <- input$msdata
 		time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
-		count <- 0
-		progress <- shiny::Progress$new()
-		on.exit(progress$close())
-		progress$set(message = "Uploading", value = 0)
-		for (fileloc in file$datapath) {
-		  progress$inc(1/length(file$datapath), detail = paste("File:", file$name[count + 1]))
-			upload_file <- function(countUF, filelocUF, dirUF, timeUF, sample_descriptionUF, filenamesUF, metadataUF){
-			  file.copy(filelocUF, dirUF)
-  			if (grepl('.raw', filelocUF, fixed=TRUE)) {
-  				system(paste("docker run -it --rm -v ", dirUF, ":/massascans chambm/pwiz-skyline-i-agree-to-the-vendor-licenses wine msconvert /massascans/", countUF, ".raw", " --mzXML -o /massascans", sep = "")) #change .raw files to .mzXML
-  				system(paste("rm ", dirUF, "/", countUF, ".raw", sep = ""))
-  				filetype <- ".mzXML"
-  			}
-			  else if (grepl('.mzXML', filelocUF, fixed=TRUE)) {
-			    filetype <- ".mzXML"
-			  }
-			  else if (grepl('.CDF', filelocUF, fixed=TRUE)) {
-			    filetype <- ".CDF"
-			  }
-			  else {
-			    print("Wrong file format!")
-			    system(paste("rm ", filelocUF, sep = ""))
-			  }
-  			hash <- system(paste("sha224sum ", paste(dirUF, "/", countUF, filetype, sep = ""), " | awk '{print $1}'", sep = ""), intern=TRUE)
-  			if (hash %in% sample_table_content[, 1]) {
-  			  print("Sample already present!")
-  			  system(paste("rm ", dirUF, "/", countUF, ".mzXML", sep = ""))
-  			}
-  			else {
-    			file.rename(paste(dirUF, "/", countUF, filetype, sep = ""), paste(dirUF, "/", hash, filetype, sep = ""))
-    			filepath <- toString(paste(dirUF, "/", hash, filetype, sep = ""))
-    			tryCatch(
-    				{
-    					aa <- openMSfile(filepath)
-    					aai <- instrumentInfo(aa)
-    					test.empty <- header(aa)
-    					test.empty <- test.empty$lowMZ
-    					on.exit(close(aa))
-    					close(aa)
-    					if (length(test.empty) == 0) {
-    					  shinyjs::alert(paste(toString(file$name[countUF + 1]), " is empty! Please refrain from uploading empty MS-files!"))
-    					  file.remove(filepath)
-    					}
-    					if (length(test.empty) > 1) {
-    					  if (aai$ionisation == "electrospray ionization") {
-    					    chromtype <- 1
-    					  } else {
-    					    chromtype <- 2
-    					  }
-    					  ogXCMSset <- readMSData(filepath, mode = "onDisk")
-    					  saveRDS(ogXCMSset, paste(dirUF, "/", hash, ".rds", sep = ""))
-    					  todf <- data.frame(
-    					    sample_hash = toString(hash),
-    					    file_path = toString(filepath),
-    					    upload_date = toString(timeUF),
-    					    sample_description = toString(sample_descriptionUF),
-    					    metadata = toString(metadataUF),
-    					    chromatography_type = toString(chromtype),
-    					    original_file_name = toString(tools::file_path_sans_ext(filenamesUF[countUF + 1])),
-    					    original_XCMSnExp_path = toString(paste(dirUF, "/", hash, ".rds", sep = ""))
-    					  )
-    					  insert_query("sample", todf)
-    					}
-    				},
-  				error = function(cnd){
-  		  		file.remove(filepath)
-  				  system("echo ERROR")
-  				  print("REMOVED FILE")
-  		  		return(NA)
-  				}
-  			  )
-  			}
-			}
-			#for potential async useage
-			upload_file(count, fileloc, dir, time, input$sample_description, file$name,
-			            gsub("[^[:alnum:][:space:]]", "",
-			                 input[[paste("meta", count + 1, sep = "")]]))
-		  count <- count + 1
+		#progress <- shiny::Progress$new()
+		#on.exit(progress$close())
+		#progress$set(message = "Uploading", value = 0)s
+		run_file_upload <- function(rfuFile, rfuTime, rfuDir, rfuSample_description, rfuDb_usr, rfuD_pwd, rfuSample_table_content, rfuFile_tags){
+		  count <- 0
+		  plan(multisession)
+		  for (fileloc in rfuFile$datapath) {
+		    insert_query <- function(tb_name, data){
+		      sqlconn <- dbConnect(
+		        drv = RMySQL::MySQL(),
+		        dbname='boloa',
+		        host="127.0.0.1",
+		        port=3306,
+		        user=rfuDb_usr,
+		        password=rfuD_pwd
+		      )
+		      
+		      on.exit(dbDisconnect(sqlconn))
+		      dbWriteTable(sqlconn, tb_name, data, append = TRUE, row.names = FALSE)
+		    }
+		    send_query <- function(query){
+		      sqlconn <- dbConnect(
+		        drv = RMySQL::MySQL(),
+		        dbname='boloa',
+		        host="127.0.0.1",
+		        port=3306,
+		        user=rfuDb_usr,
+		        password=rfuD_pwd
+		      )
+		      on.exit(dbDisconnect(sqlconn))
+		      dbSendQuery(sqlconn, query)
+		    }
+		    #progress$inc(1/length(file$datapath), detail = paste("File:", file$name[count + 1]))
+		    upload_file <- function(ufCount, ufFileloc, ufDir, ufTime, ufSample_description, ufFile, ufFile_tag, ufDb_usr, ufDb_pwd, ufSample_table_content){
+		      insert_query <- function(tb_name, data){
+		        sqlconn <- dbConnect(
+		          drv = RMySQL::MySQL(),
+		          dbname='boloa',
+		          host="127.0.0.1",
+		          port=3306,
+		          user=ufDb_usr,
+		          password=ufDb_pwd
+		        )
+
+		        on.exit(dbDisconnect(sqlconn))
+		        dbWriteTable(sqlconn, tb_name, data, append = TRUE, row.names = FALSE)
+		      }
+		      send_query <- function(query){
+		        sqlconn <- dbConnect(
+		          drv = RMySQL::MySQL(),
+		          dbname='boloa',
+		          host="127.0.0.1",
+		          port=3306,
+		          user=ufDb_usr,
+		          password=ufDb_pwd
+		        )
+		        on.exit(dbDisconnect(sqlconn))
+		        dbSendQuery(sqlconn, query)
+		      }
+		      file.copy(ufFileloc, ufDir)
+		      if (grepl('.raw', ufFileloc, fixed=TRUE)) {
+		        system(paste("docker run --rm -v ", ufDir, ":/massascans chambm/pwiz-skyline-i-agree-to-the-vendor-licenses wine msconvert /massascans/", ufCount, ".raw", " --mzXML -o /massascans", sep = "")) #change .raw files to .mzXML
+		        system(paste("rm ", ufDir, "/", ufCount, ".raw", sep = ""))
+		        filetype <- ".mzXML"
+		      }
+		      else if (grepl('.mzXML', ufFileloc, fixed=TRUE)) {
+		        filetype <- ".mzXML"
+		      }
+		      else if (grepl('.CDF', ufFileloc, fixed=TRUE)) {
+		        filetype <- ".CDF"
+		      }
+		      else {
+		        system(paste("rm ", ufFileloc, sep = ""))
+		      }
+		      hash <- system(paste("sha224sum ", paste(ufDir, "/", ufCount, filetype, sep = ""), " | awk '{print $1}'", sep = ""), intern=TRUE)
+		      if (hash %in% ufSample_table_content) {
+		        system(paste("rm -f ", ufDir, "/", ufCount, filetype, sep = ""))
+		      }
+		      else {
+  	        file.rename(paste(ufDir, "/", ufCount, filetype, sep = ""), paste(ufDir, "/", hash, filetype, sep = ""))
+  	        filepath <- toString(paste(ufDir, "/", hash, filetype, sep = ""))
+  	        tryCatch(
+  	          {
+  	            aa <- openMSfile(filepath)
+  	            aai <- instrumentInfo(aa)
+  	            test.empty <- header(aa)
+  	            test.empty <- test.empty$lowMZ
+  	            on.exit(close(aa))
+  	            close(aa)
+  	            if (length(test.empty) == 0) {
+  	              file.remove(filepath)
+  	            }
+  	            if (length(test.empty) > 1) {
+  	              if (aai$ionisation == "electrospray ionization") {
+  	                chromtype <- 1
+  	              } else {
+  	                chromtype <- 2
+  	              }
+  	              ogXCMSset <- readMSData(filepath, mode = "onDisk")
+  	              saveRDS(ogXCMSset, paste(ufDir, "/", hash, ".rds", sep = ""))
+  	              todf <- data.frame(
+  	                sample_hash = toString(hash),
+  	                file_path = toString(filepath),
+  	                upload_date = toString(ufTime),
+  	                sample_description = toString(ufSample_description),
+  	                metadata = toString(ufFile_tag),
+  	                chromatography_type = toString(chromtype),
+  	                original_file_name = toString(tools::file_path_sans_ext(ufFile[ufCount + 1])),
+  	                original_XCMSnExp_path = toString(paste(ufDir, "/", hash, ".rds", sep = ""))
+  	              )
+  	              # return(todf)
+  	              send_query(stringr::str_glue("SET GLOBAL local_infile=1;"))
+  	              insert_query("sample", todf)
+  	            }
+  	          },
+  	          error = function(cnd){
+  	            file.remove(filepath)
+  	            file.remove(paste(ufDir, "/", hash, ".rds", sep = ""))
+  	            system("echo ERROR")
+  	            print("REMOVED FILE")
+  	            return(NA)
+  	          }
+  	        )
+		      }
+		    }
+		    #for potential async useage
+		    future({upload_file(count, fileloc, rfuDir, rfuTime, rfuSample_description, rfuFile$name, rfuFile_tags[count + 1], rfuDb_usr, rfuD_pwd, rfuSample_table_content)}, seed = NULL)
+		    upload_file(count, fileloc, rfuDir, rfuTime, rfuSample_description, rfuFile$name, rfuFile_tags[count + 1], rfuDb_usr, rfuD_pwd, rfuSample_table_content)
+		    count <- count + 1
+		    # sink()
+		  }
 		}
-		shinyjs::alert('Data upload completed. Select samples from 
-		               the table in order to continue analysis.')
-		session$reload()
+		sample_descr <- toString(input$sample_description)
+		sample_hashes_existing <- sample_table_content[, 1]
+		future({run_file_upload(file, time, dir, sample_descr, db_usr, db_pwd, sample_hashes_existing, file_tags)}, seed = NULL)
+		# run_file_upload(file, time, dir, input$sample_description, db_usr, db_pwd, sample_table_content, file_tags)
+		updateTextInput(session, "sample_description", value = "")
+		shinyjs::alert('Data upload in progress... Check back later!\nWarning: Do not close the current tab!')
+		# session$reload()
 	})
   
 	#Update table to selected datatype
@@ -630,6 +694,7 @@ server <- function(input, output, session) {
 	      }
 	      shinyjs::alert(paste('Your job "', input$job_name, '" is running. Check progress in the "Jobs" tab.', sep = ""))
 	      future({xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 7)}, seed = NULL)
+	      session$reload()
 	      # if (input$debug == 0) {
 	      #   future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = .packages(TRUE))
 	      # }
@@ -951,26 +1016,26 @@ server <- function(input, output, session) {
           #   subsetAdjust = c("average", "previous")
           # )
           xset <- adjustRtime(xset, param = align_param)
-          save(xset, file = "/exports/nas/berends.p/boloa/xset.rda")
         }
         if (job_plan >= 5 | job_plan == 7){
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '7/9 Grouping peaks...' WHERE job_id = ", job_id, ";", sep = "")))
-          # peak_group_param <- PeakDensityParam(
-          #   sampleGroups = numeric(),
-          #   bw = 30,
-          #   minFraction = 0.5,
-          #   minSamples = 1,
-          #   binSize = 0.25,
-          #   maxFeatures = 50
-          # )
-          # xset <- groupChromPeaks(xset, param = peak_group_param)
+          peak_group_param <- PeakDensityParam(
+            sampleGroups = numeric(),
+            bw = 30,
+            minFraction = 0.5,
+            minSamples = 1,
+            binSize = 0.25,
+            maxFeatures = 50
+          )
+          xset <- groupChromPeaks(xset, param = peak_group_param)
         }
         if (job_plan >= 6 | job_plan == 7){
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '8/9 Filling peaks...' WHERE job_id = ", job_id, ";", sep = "")))
-          #xset <- fillChromPeaks(xset)
+          xset <- fillChromPeaks(xset)
         }
         if (job_plan == 7){
-          send_query(stringr::str_glue(paste("UPDATE job SET job_status = '9/9 Generating plots...' WHERE job_id = ", job_id, ";", sep = "")))
+          save(xset, file = "xset.rda")
+          send_query(stringr::str_glue(paste("UPDATE job SET job_status = '9/9 Annotating peaks...' WHERE job_id = ", job_id, ";", sep = "")))
         }
         output$analysis_output <- renderUI({
           print("Finished")
