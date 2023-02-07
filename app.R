@@ -10,6 +10,7 @@ library(digest)
 library(DBI)
 library(RMySQL)
 #library(tidyverse)
+library(dplyr)
 library(DT)
 library(pacman)
 library(devtools)
@@ -48,9 +49,9 @@ tryCatch(
 	  #library(shinyvalidate)
 	}
 )
-
+# install_github("berlinguyinca/spectra-hash", subdir="splashR")
+library(splashR)
 #print(warnings())
-
 get_query <- function(query){
 	sqlconn <- dbConnect(
 		drv = RMySQL::MySQL(),
@@ -96,9 +97,12 @@ options(shiny.maxRequestSize=10000*1024^2)
 hostip <- "145.97.18.149"
 portnr <- 7123
 
-all_params <- c("Peak_method", "RT_method", "mzdiff", "snthresh", "bw", "ppm", "min_peakwidth", "max_peakwidth", "noise", "prefilter", "value_of_prefilter", "minFraction", "minSamples", "maxFeatures", "mzCenterFun", "integrate", "extra", "span", "smooth", "family", "fitgauss", "polarity", "perc_fwhm", "mz_abs_iso", "max_charge", "max_iso", "corr_eic_th", "mz_abs_add", "rmConts", "verboseColumns")
+
+# all_params <- c("Peak_method", "RT_method", "mzdiff", "snthresh", "bw", "ppm", "min_peakwidth", "max_peakwidth", "noise", "prefilter", "value_of_prefilter", "minFraction", "minSamples", "maxFeatures", "mzCenterFun", "integrate", "extra", "span", "smooth", "family", "fitgauss", "polarity", "perc_fwhm", "mz_abs_iso", "max_charge", "max_iso", "corr_eic_th", "mz_abs_add", "rmConts", "verboseColumns")
+all_params <- c("Peak_method", "Ref_method", "Align_method", "Group_method", "absMz", "absRt", "baseValue", "binSize", "bw", "centerSample", "checkBack", "consecMissedLimit", "criticalValue", "distance", "distFun", "expandMz", "expandRt", "extendLengthMSW", "extraPeaks", "factorDiag", "factorGap", "family", "firstBaselineCheck", "fitgauss", "fixedMz", "fixedRt", "fwhm", "gapExtend", "gapInit", "impute", "index", "initPenalty", "integrate", "kNN", "localAlignment", "max", "maxFeatures", "minFraction", "minProp", "minSamples", "mzCenterFun", "mzdiff", "mzVsRtBalance", "ncol", "noise", "nrow", "nValues", "peakGroupsMatrix", "max_peakwidth", "min_peakwidth", "ppm", "prefilter", "value_of_prefilter", "response", "roiList", "roiScales", "sampleGroups", "sigma", "smooth", "snthresh", "span", "steps", "subset", "subsetAdjust", "threshold", "unions", "value", "verboseColumns", "withWave")
 lcms_only <- tail(all_params, n=9)
 
+# send_query(stringr::str_glue("SET GLOBAL local_infile=1;"))
 
 ui <- fillPage(
   padding = NULL,
@@ -109,7 +113,7 @@ ui <- fillPage(
 	mainPanel(style = "padding: 0px;",
 		titlePanel("Boloa"),
 		tabsetPanel(id = "tabSwitch",
-			tabPanel("Select data",  icon = icon("arrow-right"), style='width:100vw;height:90vh;overflow-y: scroll;',
+			tabPanel("Select data",  icon = icon("arrow-right"), style='width:100vw;height:90vh;overflow-y: scroll;', value = "p1",
 				fluidRow(style='max-width:100%;padding:10px;',
 					column(3,
 						br(),
@@ -127,7 +131,7 @@ ui <- fillPage(
 					)
 				)
 			),
-			tabPanel("Process data", icon = icon("arrow-right"), style='width:100vw;height:90vh;overflow-y: scroll;',
+			tabPanel("Process data", icon = icon("arrow-right"), style='width:100vw;height:90vh;overflow-y: scroll;', value = "p2",
 				fluidRow(style='max-width:100%;padding:10px;',
 					column(7,
   		      radioButtons("datatype", label = "Select correct chromatography type in order to properly display data:",
@@ -149,62 +153,76 @@ ui <- fillPage(
 						uiOutput("previewplot")
 					)
 				),
+				fluidRow(style='max-width:100%;padding:20px;margin-top:20px; border-top:1px solid #dfd7ca;',
+				         h4("Parameters:")),
 				fluidRow(style='max-width:100%;padding:10px;',
-					style='margin-top:20px; border-top:1px solid #dfd7ca;',
-					column(2,
-						selectInput("preset", label = "Parameter presets", choices = list("None" = 0, "LC-MS" = 1, "GC-MS" = 2, "Automatic (centWave only)" = 3), width = 160),
+					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+						selectInput("preset", label = "Parameter presets", choices = list("None" = 0, "LC-MS" = 1, "GC-MS" = 2, "Automatic (centWave only)" = 3)),
 						textInput("job_name", label = "Job name"),
 						actionButton("submitJob", "Submit job", width = 180, icon=icon("play")),
 						checkboxInput("debug", label = "Debug mode", 0),
 						tableOutput("jobval")
 					),
-					column(2, #zet deze in een nieuwe tab, de 1e wordt voor alleen geuploade samples.
-						h4("Parameters:"),
-						h5("1. Peak detection"),
-						numericInput("min_peakwidth", label = "Minimum peak width", 5),
-						numericInput("max_peakwidth", label = "Maximum peak width", 30),
-						numericInput("mzdiff", label = "mzdiff", 0.01),
-						numericInput("snthresh", label = "snthresh", 10),
-						numericInput("bw", label = "bw", 10),
-						selectInput("Peak_method", label = "Peak_method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2)),
-						selectInput("RT_method", label = "RT_method", choices = list("loess" = 0, "obiwarp" = 1)),
-						numericInput("ppm", label = "ppm", 93.07),
-						numericInput("noise", label = "noise", 0),
-						numericInput("prefilter", label = "prefilter", 2),
-						numericInput("value_of_prefilter", label = "value_of_prefilter", 328.63),
+					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+						h5("1. Detection"),
+						selectInput("Peak_method", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2)),
+						uiOutput("peak_parameters")
+						# numericInput("min_peakwidth", label = "Minimum peak width", 5),
+						# numericInput("max_peakwidth", label = "Maximum peak width", 30),
+						# numericInput("mzdiff", label = "mzdiff", 0.01),
+						# numericInput("snthresh", label = "snthresh", 10),
+						# numericInput("bw", label = "bw", 10),
+						# selectInput("Peak_method", label = "Peak_method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2)),
+						# selectInput("RT_method", label = "RT_method", choices = list("loess" = 0, "obiwarp" = 1)),
+						# numericInput("ppm", label = "ppm", 93.07),
+						# numericInput("noise", label = "noise", 0),
+						# numericInput("prefilter", label = "prefilter", 2),
+						# numericInput("value_of_prefilter", label = "value_of_prefilter", 328.63),
 					),
-					column(2,
-						br(),br(),
-						h5("2. Alignment"),
-						numericInput("minFraction", label = "minFraction", 0.8),
-						numericInput("minSamples", label = "minSamples", 1),
-						numericInput("maxFeatures", label = "maxFeatures", 100),
-						checkboxInput("fitgauss", label = "fitgauss", 0),
-						selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4)),
-						numericInput("integrate", label = "integrate", 1),
-						numericInput("extra", label = "extra", 1),
-						numericInput("span", label = "span", 0.4),
-						selectInput("smooth", label = "smooth", choices = list("Loess" = 0, "Linear" = 1)),
-						selectInput("family", label = "family", choices = list("gaussian" = 0, "symmetric" = 1))
+					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+						h5("2. Refinement"),
+						selectInput("Ref_method", label = "Peak refinement method", choices = list("MergeNeighboringPeaks" = 0, "FilterIntensity" = 1)),
+						uiOutput("refinement_parameters")
+						# numericInput("minFraction", label = "minFraction", 0.8),
+						# numericInput("minSamples", label = "minSamples", 1),
+						# numericInput("maxFeatures", label = "maxFeatures", 100),
+						# checkboxInput("fitgauss", label = "fitgauss", 0),
+						# selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4)),
+						# numericInput("integrate", label = "integrate", 1),
+						# numericInput("extra", label = "extra", 1),
+						# numericInput("span", label = "span", 0.4),
+						# selectInput("smooth", label = "smooth", choices = list("Loess" = 0, "Linear" = 1)),
+						# selectInput("family", label = "family", choices = list("gaussian" = 0, "symmetric" = 1))
 					),
-					column(2,
-						br(),br(),
-						h5("3. Annotation"),
-						checkboxInput("verboseColumns", label = "verboseColumns", 0),
-						selectInput("polarity", label = "polarity", choices = list("negative" = 0, "positive" = 1)),
-						numericInput("perc_fwhm", label = "perc_fwhm", 0.6),
-						numericInput("mz_abs_iso", label = "mz_abs_iso", 0.005),
-						numericInput("max_charge", label = "max_charge", 2),
-						numericInput("max_iso", label = "max_iso", 2),
-						numericInput("corr_eic_th", label = "corr_eic_th", 0.85),
-						numericInput("mz_abs_add", label = "mz_abs_add", 0.001),
-						checkboxInput("rmConts", label = "rmConts", 1),
-						br()
+					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+						h5("3. Alignment"),
+						selectInput("Align_method", label = "Peak alignment method", choices = list("Obiwarp" = 0, "PeakGroups" = 1)),
+						uiOutput("alignment_parameters"),
+						# checkboxInput("verboseColumns", label = "verboseColumns", 0),
+						# selectInput("polarity", label = "polarity", choices = list("negative" = 0, "positive" = 1)),
+						# numericInput("perc_fwhm", label = "perc_fwhm", 0.6),
+						# numericInput("mz_abs_iso", label = "mz_abs_iso", 0.005),
+						# numericInput("max_charge", label = "max_charge", 2),
+						# numericInput("max_iso", label = "max_iso", 2),
+						# numericInput("corr_eic_th", label = "corr_eic_th", 0.85),
+						# numericInput("mz_abs_add", label = "mz_abs_add", 0.001),
+						# checkboxInput("rmConts", label = "rmConts", 1),
 					),
-					column(4)
+					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+					       h5("4. Grouping"),
+					       selectInput("Group_method", label = "Peak grouping method", choices = list("PeakDensity" = 0, "MzClust" = 1, "NearestPeaks" = 2)),
+					       uiOutput("grouping_parameters")
+					),
+					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+					       h5("5. Filling"),
+					       numericInput("expandMz", label = "expandMz", 0),
+					       numericInput("expandRt", label = "expandRt", 0),
+					       numericInput("fixedMz", label = "fixedMz", 0),
+					       numericInput("fixedRt", label = "fixedRt", 0)
+					       )
 				)
 			),
-			tabPanel("Jobs", icon = icon("arrow-right"), style='width:100vw;height:90vh;overflow-y: scroll;',
+			tabPanel("Jobs", icon = icon("arrow-right"), style='width:100vw;height:90vh;overflow-y: scroll;', value = "p3",
 			  fluidRow(style='max-width:100%;padding:10px;',
 			    column(12,
   			    h4("Select a job to analyse contents:"),
@@ -214,17 +232,189 @@ ui <- fillPage(
 			   )
 			  )
 			),
-			tabPanel("Analysis",  icon = icon("arrow-right"), style='width:100vw;height:90vh;overflow-y: scroll;',
-			  uiOutput("analysis_output")
-			)
+			tabPanel("Analysis",  icon = icon("arrow-right"), style='width:100vw;height:90vh;overflow-y: scroll;', value = "p4",
+  			fluidRow(style='max-width:100%;padding:10px;',
+  			         column(12,
+  			                uiOutput("jobInformation")
+  			                )
+  			         ),
+  			fluidRow(style='max-width:100%;padding:10px;',
+  			         column(6,
+  			                div(DT::dataTableOutput("analysisParams"))#, style = "font-size: 75%; width: 25%")
+  			         ),
+  			         column(6,
+  			                div(DT::dataTableOutput("analysisSamples"))#, style = "font-size: 75%; width: 50%")
+  			                
+  			         )
+  			),
+  			fluidRow(style='max-width:100%;padding:10px;',
+  			         column(6,
+  			                plotOutput("analysisPCA")
+  			         ),
+  			         column(6,
+  			                plotlyOutput("analysisPeaksTIC")
+  			         )
+  			),
+  			fluidRow(style='max-width:100%;padding:10px;',
+  			         column(6,
+  			                uiOutput("analysisCompounds")
+  			         ),
+  			         column(6,
+  			                uiOutput("analysisDifferential")
+  			         )
+  			),
+  			fluidRow(style='max-width:100%;padding:10px;',
+  			         column(6,
+  			                uiOutput("analysisVenn")
+  			         ),
+  			         column(6,
+  			                uiOutput("analysisHeatmap")
+  			         )
+  			)
 		)
 	)
 )
-
+)
 
 
 server <- function(input, output, session) {
   nr_files <<- 0
+  
+  observeEvent(input$Peak_method, {
+    if (input$Peak_method == 0) {
+      peak_options <- tagList(
+        numericInput("ppm", label = "ppm", 93.07),
+        numericInput("min_peakwidth", label = "min_peakwidth", 5),
+        numericInput("max_peakwidth", label = "max_peakwidth", 30),
+        numericInput("snthresh", label = "snthresh", 10),
+        numericInput("prefilter", label = "prefilter", 2),
+        numericInput("value_of_prefilter", label = "value_of_prefilter", 328.63),
+        selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4)),
+        numericInput("integrate", label = "integrate", 1),
+        numericInput("mzdiff", label = "mzdiff", 0.01),
+        checkboxInput("fitgauss", label = "fitgauss", 0),
+        numericInput("noise", label = "noise", 0),
+        checkboxInput("verboseColumns", label = "verboseColumns", 0)
+      )
+    }
+    else if (input$Peak_method == 1) {
+      peak_options <- tagList(
+        numericInput("ppm", label = "ppm", 93.07),
+        numericInput("min_peakwidth", label = "min_peakwidth", 5),
+        numericInput("max_peakwidth", label = "max_peakwidth", 30),
+        numericInput("snthresh", label = "snthresh", 10),
+        numericInput("prefilter", label = "prefilter", 2),
+        numericInput("value_of_prefilter", label = "value_of_prefilter", 328.63),
+        selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4)),
+        numericInput("integrate", label = "integrate", 1),
+        numericInput("mzdiff", label = "mzdiff", 0.01),
+        checkboxInput("fitgauss", label = "fitgauss", 0),
+        numericInput("noise", label = "noise", 0),
+        checkboxInput("verboseColumns", label = "verboseColumns", 0),
+        numericInput("criticalValue", label = "criticalValue", 1.125),
+        numericInput("consecMissedLimit", label = "consecMissedLimit", 2),
+        numericInput("unions", label = "unions", 1),
+        numericInput("checkBack", label = "checkBack", 0),
+        checkboxInput("withWave", label = "withWave", 0)
+      )
+    }
+    else if (input$Peak_method == 2) {
+      peak_options <- tagList(
+        numericInput("binSize", label = "binSize", 0.1),
+        # numericInput("impute", label = "impute", 5),
+        # numericInput("baseValue", label = "baseValue", 5),
+        # numericInput("distance", label = "distance", 5),
+        numericInput("fwhm", label = "fwhm", 30),
+        numericInput("sigma", label = "sigma", 2.3548),
+        numericInput("max", label = "max", 5),
+        numericInput("snthresh", label = "snthresh", 10),
+        numericInput("steps", label = "steps", 2),
+        numericInput("mzdiff", label = "mzdiff", 0.8),
+        checkboxInput("index", label = "index", 0)
+      )
+    }
+    output$peak_parameters <- renderUI(peak_options)
+  })
+  
+  observeEvent(input$Ref_method, {
+    if (input$Ref_method == 0) {
+      ref_options <- tagList(
+        numericInput("expandRt", label = "expandRt", 2),
+        numericInput("expandMz", label = "expandMz", 0),
+        numericInput("minProp", label = "minProp", 0.75)
+      )
+    }
+    else if (input$Ref_method == 1) {
+      ref_options <- tagList(
+        numericInput("threshold", label = "threshold", 0),
+        # numericInput("nValues", label = "nValues", 5),
+        # numericInput("value", label = "value", 5)
+      )
+    }
+    output$refinement_parameters <- renderUI(ref_options)
+  })
+   
+  observeEvent(input$Align_method, {
+    if (input$Align_method == 0) {
+      alig_options <- tagList(
+        #binSize = 1,
+        numericInput("binSize", label = "binSize", 1),
+        # numericInput("centerSample", label = "centerSample", 5),
+        # numericInput("response", label = "response", 1),
+        # numericInput("distFun", label = "distFun", 5),
+        # numericInput("gapInit", label = "gapInit", 5),
+        # numericInput("gapExtend", label = "gapExtend", 5),
+        numericInput("factorDiag", label = "factorDiag", 2),
+        numericInput("factorGap", label = "factorGap", 1),
+        checkboxInput("localAlignment", label = "localAlignment", 0),
+        numericInput("initPenalty", label = "initPenalty", 0),
+        # numericInput("subset", label = "subset", 5),
+        selectInput("subsetAdjust", label = "subsetAdjust", choices = list("average" = 0, "previous" = 1))
+      )
+    }
+    else if (input$Align_method == 1) {
+      alig_options <- tagList(
+        numericInput("minFraction", label = "minFraction", 0.9),
+        numericInput("extraPeaks", label = "extraPeaks", 1),
+        selectInput("smooth", label = "smooth", choices = list("loess" = 0, "linear" = 1)),
+        numericInput("span", label = "span", 0.2),
+        selectInput("family", label = "family", choices = list("gaussian" = 0, "symmetric" = 1)),
+        # numericInput("peakGroupsMatrix", label = "peakGroupsMatrix", 5),
+        # numericInput("subset", label = "subset", 5),
+        selectInput("subsetAdjust", label = "subsetAdjust", choices = list("average" = 0, "previous" = 1))
+      )
+    }
+    output$alignment_parameters <- renderUI(alig_options)
+  })
+  
+  observeEvent(input$Group_method, {
+    if (input$Group_method == 0) {
+      group_options <- tagList(
+        numericInput("bw", label = "bw", 30),
+        numericInput("minFraction", label = "minFraction", 0.5),
+        numericInput("minSamples", label = "minSamples", 1),
+        numericInput("binSize", label = "binSize", 0.25),
+        numericInput("maxFeatures", label = "maxFeatures", 50)
+      )
+    }
+    else if (input$Group_method == 1) {
+      group_options <- tagList(
+        numericInput("absMz", label = "absMz", 0),
+        numericInput("minFraction", label = "minFraction", 0.5),
+        numericInput("minSamples", label = "minSamples", 1)
+      )
+    }
+    else if (input$Group_method == 2) {
+      group_options <- tagList(
+        numericInput("mzVsRtBalance", label = "mzVsRtBalance", 10),
+        numericInput("absMz", label = "absMz", 0.2),
+        numericInput("absRt", label = "absRt", 15),
+        numericInput("kNN", label = "kNN", 10)
+      )
+    }
+    output$grouping_parameters <- renderUI(group_options)
+  })
+  
 	#Weergave van geuploade bestand(en)
 	observeEvent(input$msdata, {
 		output$fileOverview <- renderUI({
@@ -368,31 +558,6 @@ server <- function(input, output, session) {
 		  count <- 0
 		  plan(multisession)
 		  for (fileloc in rfuFile$datapath) {
-		    insert_query <- function(tb_name, data){
-		      sqlconn <- dbConnect(
-		        drv = RMySQL::MySQL(),
-		        dbname='boloa',
-		        host="127.0.0.1",
-		        port=3306,
-		        user=rfuDb_usr,
-		        password=rfuD_pwd
-		      )
-		      
-		      on.exit(dbDisconnect(sqlconn))
-		      dbWriteTable(sqlconn, tb_name, data, append = TRUE, row.names = FALSE)
-		    }
-		    send_query <- function(query){
-		      sqlconn <- dbConnect(
-		        drv = RMySQL::MySQL(),
-		        dbname='boloa',
-		        host="127.0.0.1",
-		        port=3306,
-		        user=rfuDb_usr,
-		        password=rfuD_pwd
-		      )
-		      on.exit(dbDisconnect(sqlconn))
-		      dbSendQuery(sqlconn, query)
-		    }
 		    #progress$inc(1/length(file$datapath), detail = paste("File:", file$name[count + 1]))
 		    upload_file <- function(ufCount, ufFileloc, ufDir, ufTime, ufSample_description, ufFile, ufFile_tag, ufDb_usr, ufDb_pwd, ufSample_table_content){
 		      insert_query <- function(tb_name, data){
@@ -488,7 +653,7 @@ server <- function(input, output, session) {
 		    }
 		    #for potential async useage
 		    future({upload_file(count, fileloc, rfuDir, rfuTime, rfuSample_description, rfuFile$name, rfuFile_tags[count + 1], rfuDb_usr, rfuD_pwd, rfuSample_table_content)}, seed = NULL)
-		    upload_file(count, fileloc, rfuDir, rfuTime, rfuSample_description, rfuFile$name, rfuFile_tags[count + 1], rfuDb_usr, rfuD_pwd, rfuSample_table_content)
+		    #upload_file(count, fileloc, rfuDir, rfuTime, rfuSample_description, rfuFile$name, rfuFile_tags[count + 1], rfuDb_usr, rfuD_pwd, rfuSample_table_content)
 		    count <- count + 1
 		    # sink()
 		  }
@@ -509,7 +674,7 @@ server <- function(input, output, session) {
 	    selsamples <<- selsamples[selsamples$chromatography_type == input$datatype,]
 	    selsamples$chromatography_type[selsamples$chromatography_type == 1] <- "Liquid"
 	    selsamples$chromatography_type[selsamples$chromatography_type == 2] <- "Gas"
-	    if (input$tabSwitch == "Process data") {
+	    if (input$tabSwitch == "p2") {
 	      if (length(selsamples$sample_hash) >= 1){
 	        preview_files <- selsamples$sample_hash
 	        filequery <- paste("sample_hash = '", preview_files[1], "'", sep = "")
@@ -693,40 +858,51 @@ server <- function(input, output, session) {
 	        sample_number <- sample_number + 1
 	      }
 	      shinyjs::alert(paste('Your job "', input$job_name, '" is running. Check progress in the "Jobs" tab.', sep = ""))
-	      future({xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 7)}, seed = NULL)
+	      if (input$debug == 0) {
+	        #future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = .packages(TRUE))
+	        future({xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 7)}, seed = NULL)
+	      }
+	      else {
+	        #metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #debug
+	        xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 7)
+	      }
 	      session$reload()
-	      # if (input$debug == 0) {
-	      #   future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = .packages(TRUE))
-	      # }
-	      # else {
-	      #   metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #debug
-	      # }
-	      # session$reload()
+	      updateTabsetPanel(session, "tabSwitch",
+	                        selected = "p3")
 	    }
 	  }
 	})
 	
 	#Actions involving job analysis
 	observeEvent(input$analyse, {
+# DT::dataTableOutput("analysisParams")
+# DT::dataTableOutput("analysisSamples"
+# plotOutput("analysisPCA")
+# plotlyOutput("analysisPeaksTIC")
+# uiOutput("analysisVenn")
+# uiOutput("analysisHeatmap")
 	  job_id <- job_table_content[input$jobs_rows_selected, ]$job_id
-	  # query <- stringr::str_glue(paste("SELECT file_path_rda FROM processed_sample WHERE job_id = ", job_id, ";", sep = ""))
-	  # rda_path <- get_query(query)
-	  # load(file=toString(rda_path$file_path_rda))
-	  # print(mSet)
-	  mSet <- InitDataObjects(data.type = "pktable", anal.type = "stat", FALSE)
-	  print(mSet)
-	  dir <- getwd()
-	  dir <- paste(dir, "/msets/", toString(job_id), sep = "")
-	  setwd(dir)
-	  print(paste(dir, "/metaboanalyst_input.csv", sep = ""))
-	  mSet <- Read.TextData(mSet, paste(dir, "/metaboanalyst_input.csv", sep = ""), "colu", "disc")
-	  mSet<-SanityCheckData(mSet)
-	  mSet<-ReplaceMin(mSet)
-	  mSet<-FilterVariable(mSet, "iqr", "F", 25)
-	  mSet<-PreparePrenormData(mSet)
-	  mSet<-Normalization(mSet, "MedianNorm", "LogNorm", "NULL", ratio=FALSE, ratioNum=20)
-	  mSet <- PlotNormSummary(mSet, "norm_0_", "png", 72, width=NA)
-	  mSet <- PlotSampleNormSummary(mSet, "snorm_0_", "png", 72, width=NA)
+	  output$jobInformation <- renderUI(h4(paste("Output of job", job_id, ":\n", job_table_content[input$jobs_rows_selected, ]$job_name)))
+	  updateTabsetPanel(session, "tabSwitch",
+	                    selected = "p4")
+	  query1 <- stringr::str_glue(paste("SELECT file_path_rda FROM processed_sample WHERE job_id = ", job_id, ";", sep = ""))
+	  rda_path <- get_query(query1)
+	  
+	  query2 <- stringr::str_glue(paste("SELECT * FROM parameter WHERE job_id = ", job_id, ";", sep = ""))
+	  used_parameters <- get_query(query2)
+	  
+	  query3 <- stringr::str_glue(paste("SELECT original_file_name, metadata FROM sample WHERE sample_hash IN (SELECT sample_hash FROM sample_job WHERE job_id = ", job_id, ");", sep = ""))
+	  file_info <- get_query(query3)
+	  
+	  load(file=toString(rda_path$file_path_rda))
+	  output$analysisParams <- DT::renderDataTable({
+	    DT::datatable(used_parameters, selection = 'none',
+	                  rownames= FALSE, options = list(scrollX = TRUE, autoWidth = TRUE, dom = 't'))
+	  }, server = FALSE)
+	  output$analysisSamples <- DT::renderDataTable({
+	    DT::datatable(file_info, selection = 'none',
+	                  rownames= TRUE, options = list(scrollY = TRUE))
+	  }, server = FALSE)
 	})
 	
   mass_data_annotation <- function(){
@@ -857,6 +1033,7 @@ server <- function(input, output, session) {
 	}
 
   xcms_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pw, job_plan){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
+    register(bpstart(MulticoreParam(10)))
     #####################
     send_query <- function(query){
       sqlconn <- dbConnect(
@@ -911,6 +1088,8 @@ server <- function(input, output, session) {
           def_params <- SetPeakParam(Peak_method = parameters$Peak_method, RT_method = parameters$RT_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minFraction), minSamples = as.double(parameters$minSamples), maxFeatures = as.double(parameters$maxFeatures), mzCenterFun = parameters$mzCenterFun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmConts) #verboseColumns
         }
         #processing
+        dir <- getwd()
+        dir <- paste(dir, "/processed_data", sep = "")
         if (job_plan >= 1 | job_plan == 7){
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/9 Reading MS data...' WHERE job_id = ", job_id, ";", sep = "")))
           #Load raw files into XCMSnExp-object
@@ -932,8 +1111,8 @@ server <- function(input, output, session) {
               integrate = def_params$integrate,
               mzdiff = def_params$mzdiff,
               fitgauss = def_params$fitgauss,
-              noise = def_params$noise
-              #verboseColumns = def_params$verboseColumns
+              noise = def_params$noise,
+              verboseColumns = def_params$verboseColumns
               #roiList = list(),
               #firstBaselineCheck = TRUE,
               #roiScales = numeric(),
@@ -962,16 +1141,16 @@ server <- function(input, output, session) {
           }
           else if (def_params$Peak_method == "MatchedFilter"){
             peak_params <- MatchedFilterParam(
-              #binSize = def_params$ppm,
-              #impute = def_params$ppm,
-              #baseValue = def_params$ppm,
-              #distance = def_params$ppm,
-              #fwhm = def_params$ppm,
-              #sigma = fwhm/def_params$ppm,
-              #max = def_params$ppm,
+              binSize = def_params$binSize,
+              impute = def_params$impute,
+              baseValue = def_params$baseValue,
+              distance = def_params$distance,
+              fwhm = def_params$fwhm,
+              sigma = def_params$fwhm/def_params$sigma,
+              max = def_params$max,
               snthresh = def_params$snthresh,
-              #steps = def_params$ppm,
-              #mzdiff = def_params$mzdiff - binSize * steps,
+              steps = def_params$steps,
+              mzdiff = def_params$mzdiff - def_params$binSize * def_params$steps
               #index = def_params$ppm
             )
           }
@@ -983,63 +1162,149 @@ server <- function(input, output, session) {
         if (job_plan >= 3 | job_plan == 7){
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '5/9 Refining peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           #Peak refinement
-          mpp <- MergeNeighboringPeaksParam(expandRt = 4)
-          #CleanPeaksParam()
-          #FilterIntensityParam()
+          if (preset == 3) {
+            mpp <- MergeNeighboringPeaksParam()
+          }
+            else {
+            if (def_params$Ref_method == 0){
+                mpp <- MergeNeighboringPeaksParam(
+                                                  expandRt = def_params$expandRt,
+                                                  expandMz = def_params$expandMz,
+                                                  ppm = def_params$ppm,
+                                                  minProp = def_params$minProp
+                                                  )
+              }
+            else if (def_params$Ref_method == 1) {
+            # cpp <- CleanPeaksParam()
+              fip <-  FilterIntensityParam(
+                  threshold = 0,
+                  nValues = 1L,
+                  value = "maxo"
+                  )
+            }
+          }
           xset <- refineChromPeaks(xset, mpp)
         }
         if (job_plan >= 4 | job_plan == 7){
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '6/9 Aligning peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           #Peak alignment
-          align_param <- ObiwarpParam(
-            binSize = 1,
-            centerSample = integer(),
-            response = 1L,
-            distFun = "cor_opt",
-            gapInit = numeric(),
-            gapExtend = numeric(),
-            factorDiag = 2,
-            factorGap = 1,
-            localAlignment = FALSE,
-            initPenalty = 0,
-            subset = integer(),
-            subsetAdjust = c("average", "previous")
-          )
-          # align_param <- PeakGroupsParam(
-          #   minFraction = 0.9,
-          #   extraPeaks = 1,
-          #   smooth = "loess",
-          #   span = 0.2,
-          #   family = "gaussian",
-          #   peakGroupsMatrix = matrix(nrow = 0, ncol = 0),
-          #   subset = integer(),
-          #   subsetAdjust = c("average", "previous")
-          # )
+          if (preset == 3) {
+            align_param <- ObiwarpParam()
+          }
+          else {
+            if (def_params$Align_method == 0){
+              align_param <- ObiwarpParam(
+                binSize = def_params$binSize,
+                centerSample = numeric(),
+                response = 1L,
+                distFun = "cor_opt",
+                gapInit = numeric(),
+                gapExtend = numeric(),
+                factorDiag = def_params$factorDiag,
+                factorGap = def_params$factorGap,
+                localAlignment = def_params$localAlignment,
+                initPenalty = def_params$initPenalty,
+                subset = integer(),
+                subsetAdjust = c("average", "previous")[def_params$subsetAdjust]
+              )
+            }
+            else if (def_params$Align_method == 1){
+              align_param <- PeakGroupsParam(
+                minFraction = def_params$minFraction,
+                extraPeaks = def_params$extraPeaks,
+                smooth = "loess",
+                span = def_params$span,
+                family = "gaussian",
+                peakGroupsMatrix = matrix(nrow = 0, ncol = 0),
+                subset = integer(),
+                subsetAdjust = c("average", "previous")[def_params$subsetAdjust]
+              )
+            }
+          }
           xset <- adjustRtime(xset, param = align_param)
         }
         if (job_plan >= 5 | job_plan == 7){
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '7/9 Grouping peaks...' WHERE job_id = ", job_id, ";", sep = "")))
-          peak_group_param <- PeakDensityParam(
-            sampleGroups = numeric(),
-            bw = 30,
-            minFraction = 0.5,
-            minSamples = 1,
-            binSize = 0.25,
-            maxFeatures = 50
-          )
+          if (preset == 3) {
+            peak_group_param <- PeakDensityParam()
+          }
+          else {
+            if (def_params$Group_method == 0){
+              peak_group_param <- PeakDensityParam(
+                sampleGroups = massfiles$metadata,
+                bw = massfiles$bw,
+                minFraction = massfiles$minFraction,
+                minSamples = massfiles$minSamples,
+                binSize = massfiles$binSize,
+                maxFeatures = massfiles$maxFeatures
+              )
+            }
+            else if (def_params$Group_method == 1){
+              peak_group_param <- MzClustParam(
+                sampleGroups = massfiles$metadata,
+                ppm = massfiles$ppm,
+                absMz = massfiles$absMz,
+                minFraction = massfiles$minFraction,
+                minSamples = massfiles$minSamples
+              )
+            }
+            else if (def_params$Group_method == 2){
+              peak_group_param <- NearestPeaksParam(
+                sampleGroups = massfiles$metadata,
+                mzVsRtBalance = massfiles$mzVsRtBalance,
+                absMz = massfiles$absMz,
+                absRt = massfiles$absRt,
+                kNN = massfiles$kNN
+              )
+            }
+          }
           xset <- groupChromPeaks(xset, param = peak_group_param)
         }
         if (job_plan >= 6 | job_plan == 7){
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '8/9 Filling peaks...' WHERE job_id = ", job_id, ";", sep = "")))
-          xset <- fillChromPeaks(xset)
+          # fillparam <- ChromPeakAreaParam(
+          #     # mzmin = function(z) quantile(z, probs = 0.25),
+          #     # mzmax = function(z) quantile(z, probs = 0.75),
+          #     # rtmin = function(z) quantile(z, probs = 0.25),
+          #     # rtmax = function(z) quantile(z, probs = 0.75)
+          #   )
+          if (preset == 3) {
+            fillparam <- FillChromPeaksParam()
+          }
+          else {
+            fillparam <- FillChromPeaksParam(
+              expandMz = massfiles$expandMz,
+              expandRt = massfiles$expandRt,
+              ppm = massfiles$ppm,
+              fixedMz = massfiles$fixedMz,
+              fixedRt = massfiles$fixedRt
+            )
+          }
+          xset <- fillChromPeaks(xset, param = fillparam)
+          save(xset, file = paste(dir, "/", job_id, ".rda", sep = ""))
         }
         if (job_plan == 7){
-          save(xset, file = "xset.rda")
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '9/9 Annotating peaks...' WHERE job_id = ", job_id, ";", sep = "")))
+          # intmzs <- intensity(xset)
+          # intmzs <- split(intmzs, f = fromFile(xset))
+          # mzs <- mz(xset)
+          # mzs <-split(mzs, f = fromFile(xset))
+          # #intmzs[[1]]$F1.S0106
+          # peaknr <- 1
+          # chrom_peakids <- featureDefinitions(xset)[[peaknr,"peakidx"]]
+          # chrompeaks_values <- chromPeaks(xset)[chrom_peakids,]
+          
+          
+          # annot_spectra <- featureSpectra(xset, msLevel = 1, return.type = "Spectra", skipFilled = TRUE)
+          # save(annot_spectra, file = paste(dir, "/", job_id, "_annot.rda", sep = ""))
         }
-        output$analysis_output <- renderUI({
-          print("Finished")
-        })
+        todf <- data.frame(
+          job_id = toString(job_id),
+          file_path_rda = toString(paste(dir, "/", job_id, ".rda", sep = "")),
+          file_path_peaks = toString(paste(dir, "/", job_id, "_annot.rda", sep = ""))
+        )
+        length(chromPeaks(xset)[,chromPeaks(xset)[,"sample"] == 1])
+        insert_query("processed_sample", todf)
         end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
         send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'Finished' WHERE job_id = ", job_id, ";", sep = "")))
         send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
