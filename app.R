@@ -22,6 +22,7 @@ library(reticulate)
 library(promises)
 library(future)
 library(waiter)
+library(Spectra)
 #library(deldir)
 #library(xcms)
 
@@ -99,7 +100,7 @@ portnr <- 7123
 
 
 # all_params <- c("Peak_method", "RT_method", "mzdiff", "snthresh", "bw", "ppm", "min_peakwidth", "max_peakwidth", "noise", "prefilter", "value_of_prefilter", "minFraction", "minSamples", "maxFeatures", "mzCenterFun", "integrate", "extra", "span", "smooth", "family", "fitgauss", "polarity", "perc_fwhm", "mz_abs_iso", "max_charge", "max_iso", "corr_eic_th", "mz_abs_add", "rmConts", "verboseColumns")
-all_params <- c("Peak_method", "Ref_method", "Align_method", "Group_method", "absMz", "absRt", "baseValue", "binSize", "bw", "centerSample", "checkBack", "consecMissedLimit", "criticalValue", "distance", "distFun", "expandMz", "expandRt", "extendLengthMSW", "extraPeaks", "factorDiag", "factorGap", "family", "firstBaselineCheck", "fitgauss", "fixedMz", "fixedRt", "fwhm", "gapExtend", "gapInit", "impute", "index", "initPenalty", "integrate", "kNN", "localAlignment", "max", "maxFeatures", "minFraction", "minProp", "minSamples", "mzCenterFun", "mzdiff", "mzVsRtBalance", "ncol", "noise", "nrow", "nValues", "peakGroupsMatrix", "max_peakwidth", "min_peakwidth", "ppm", "prefilter", "value_of_prefilter", "response", "roiList", "roiScales", "sampleGroups", "sigma", "smooth", "snthresh", "span", "steps", "subset", "subsetAdjust", "threshold", "unions", "value", "verboseColumns", "withWave")
+all_params <- c("Peak_method", "Ref_method", "Align_method", "Group_method", "absMz", "absRt", "baseValue", "binSize", "bw", "centerSample", "checkBack", "consecMissedLimit", "criticalValue", "distance", "distFun", "expandMz", "expandRt", "extendLengthMSW", "extraPeaks", "factorDiag", "factorGap", "family", "firstBaselineCheck", "fitgauss", "fixedMz", "fixedRt", "fwhm", "gapExtend", "gapInit", "impute", "index", "initPenalty", "integrate", "kNN", "localAlignment", "max", "maxFeatures", "minFraction", "minProp", "minSamples", "mzCenterFun", "mzdiff", "mzVsRtBalance", "ncol", "noise", "nrow", "nValues", "peakGroupsMatrix", "max_peakwidth", "min_peakwidth", "ppm", "prefilter", "value_of_prefilter", "response", "roiList", "roiScales", "sampleGroups", "sigma", "smooth", "snthresh", "span", "steps", "subset", "subsetAdjust", "threshold", "unions", "value", "verboseColumns", "withWave", "rtrange")
 lcms_only <- tail(all_params, n=9)
 
 # send_query(stringr::str_glue("SET GLOBAL local_infile=1;"))
@@ -157,6 +158,7 @@ ui <- fillPage(
 				         h4("Parameters:")),
 				fluidRow(style='max-width:100%;padding:10px;',
 					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+					  uiOutput("rtRangeSlider"),
 						selectInput("preset", label = "Parameter presets", choices = list("None" = 0, "LC-MS" = 1, "GC-MS" = 2, "Automatic (centWave only)" = 3)),
 						textInput("job_name", label = "Job name"),
 						actionButton("submitJob", "Submit job", width = 180, icon=icon("play")),
@@ -682,14 +684,19 @@ server <- function(input, output, session) {
 	        query <- stringr::str_glue("SELECT file_path, original_file_name, original_XCMSnExp_path FROM sample WHERE ", filequery, ";")
 	        selection <- get_query(query)
 	        #Render TIC(s)
+	        minrts <- c()
+	        maxrts <- c()
 	        output$ticplot <- renderPlotly({
 	          chrom <- plot_ly(x = NULL, y = NULL, type = 'scatter', mode = 'lines', fill = 'tozeroy') %>% layout(title = "Total Ion Current", xaxis = list(title = "Retention time (seconds)"), yaxis = list(title = "TotIonCurrent"))
 	          for (i in 1:length(preview_files)){
 	            aa <- readRDS(selection$original_XCMSnExp_path[i], refhook = NULL)
+	            minrts <- c(min(rtime(aa)), minrts)
+	            maxrts <- c(max(rtime(aa)), maxrts)
 	            y <- aa@featureData@data$totIonCurrent
 	            x <- aa@featureData@data$retentionTime
 	            chrom <- chrom %>% add_lines(x = x, y = y, name = selection$original_file_name[i])
 	          }
+	          output$rtRangeSlider <- renderUI(sliderInput("rtrange", label = "Select a minimum and maximum retention time.", value = c(min(minrts), max(maxrts)), min = min(minrts), max = max(maxrts)))
 	          chrom
 	        })
 	      }
@@ -807,15 +814,21 @@ server <- function(input, output, session) {
 	    validate(need(length(selsamples$sample_hash) >= 3, "Please select at least 3 samples"))
 	  })
 	  if (nchar(input$job_name) != 0) {
-	    if (length(selsamples$sample_hash) >= 3) {
+	    if (length(selsamples$sample_hash) >= 1) {
 	      params <- c()
 	      used_param_names <- c()
 	      for (p in all_params) {
 	        if(is.null(input[[p]])) {
 	        }
 	        else {
-	          params <- c(params, input[[p]])
-	          used_param_names <- c(used_param_names, p)
+	          if (p == "rtrange") {
+	            params <- c(params, input[[p]][1], input[[p]][2])
+	            used_param_names <- c(used_param_names, "rtrmin", "rtrmax")
+	          }
+	          else {
+	            params <- c(params, input[[p]])
+	            used_param_names <- c(used_param_names, p) 
+	          }
 	        }
 	      }
 	      names(params) <- used_param_names
@@ -892,6 +905,58 @@ server <- function(input, output, session) {
 	  load(file=toString(rda_path$file_path_rda))
 	  query4 <- stringr::str_glue(paste("SELECT * FROM sample WHERE sample_hash IN (SELECT sample_hash FROM sample_job WHERE job_id = ", job_id, ");", sep = ""))
 	  selection <- get_query(query4)
+	  if (used_parameters$Peak_method == 0) {
+	    peak_options <- tagList(
+	      numericInput("ppm", label = "ppm", value = used_parameters$ppm),
+	      numericInput("min_peakwidth", label = "min_peakwidth", value = used_parameters$min_peakwidth),
+	      numericInput("max_peakwidth", label = "max_peakwidth", value = used_parameters$max_peakwidth),
+	      numericInput("snthresh", label = "snthresh", value = used_parameters$snthresh),
+	      numericInput("prefilter", label = "prefilter", value = used_parameters$prefilter),
+	      numericInput("value_of_prefilter", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
+	      selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
+	      numericInput("integrate", label = "integrate", value = used_parameters$integrate),
+	      numericInput("mzdiff", label = "mzdiff", value = used_parameters$mzdiff),
+	      checkboxInput("fitgauss", label = "fitgauss", value = used_parameters$fitgauss),
+	      numericInput("noise", label = "noise", value = used_parameters$noise),
+	      checkboxInput("verboseColumns", label = "verboseColumns", value = used_parameters$verboseColumns)
+	    )
+	  }
+	  else if (used_parameters$Peak_method == 1) {
+	    peak_options <- tagList(
+	      numericInput("ppm", label = "ppm", value = used_parameters$ppm),
+	      numericInput("min_peakwidth", label = "min_peakwidth", value = used_parameters$min_peakwidth),
+	      numericInput("max_peakwidth", label = "max_peakwidth", value = used_parameters$max_peakwidth),
+	      numericInput("snthresh", label = "snthresh", value = used_parameters$snthresh),
+	      numericInput("prefilter", label = "prefilter", value = used_parameters$prefilter),
+	      numericInput("value_of_prefilter", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
+	      selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
+	      numericInput("integrate", label = "integrate", value = used_parameters$integrate),
+	      numericInput("mzdiff", label = "mzdiff", value = used_parameters$mzdiff),
+	      checkboxInput("fitgauss", label = "fitgauss", value = used_parameters$fitgauss),
+	      numericInput("noise", label = "noise", value = used_parameters$noise),
+	      checkboxInput("verboseColumns", label = "verboseColumns", value = used_parameters$verboseColumns),
+	      numericInput("criticalValue", label = "criticalValue", value = used_parameters$criticalValue),
+	      numericInput("consecMissedLimit", label = "consecMissedLimit", value = used_parameters$consecMissedLimit),
+	      numericInput("unions", label = "unions", value = used_parameters$unions),
+	      numericInput("checkBack", label = "checkBack", value = used_parameters$checkBack),
+	      checkboxInput("withWave", label = "withWave", value = used_parameters$withWave)
+	    )
+	  }
+	  else if (used_parameters$Peak_method == 2) {
+	    peak_options <- tagList(
+	      numericInput("binSize", label = "binSize", value = used_parameters$binSize),
+	      selectInput("impute", label = "impute", choices = list("none" = 0, "lin" = 1, "linbase" = 2, "intlin" = 3, "imputeLinInterpol" = 4), selected = used_parameters$impute),
+	      # numericInput("baseValue", label = "baseValue", 5),
+	      # numericInput("distance", label = "distance", 5),
+	      numericInput("fwhm", label = "fwhm", value = used_parameters$fwhm),
+	      numericInput("sigma", label = "sigma", value = used_parameters$sigma),
+	      numericInput("max", label = "max", value = used_parameters$max),
+	      numericInput("snthresh", label = "snthresh", value = used_parameters$snthresh),
+	      numericInput("steps", label = "steps", value = used_parameters$steps),
+	      numericInput("mzdiff", label = "mzdiff", value = used_parameters$mzdiff),
+	      checkboxInput("index", label = "index", value = used_parameters$index)
+	    )
+	  }
 	  output$job_analysis <- renderUI(tagList(
 	    h4(paste("Output of job", job_id, ":\n", job_table_content[input$jobs_rows_selected, ]$job_name)),
         fluidRow(style='max-width:100%;padding:10px;',
@@ -919,6 +984,7 @@ server <- function(input, output, session) {
   			         column(6,
   			                renderPlotly({
   			                  ft_fv <- log2(featureValues(xset, filled = TRUE))
+  			                  ft_fv <- scale(featureValues(xset), scale = TRUE)
   			                  pc <- prcomp(t(na.omit(ft_fv)), center = TRUE)
   			                  pca <- plot_ly(x = NULL, y = NULL, z = NULL, type = "scatter3d") %>% layout(title  = "PCA", scene = list(xaxis = list(title = "PC1"), yaxis = list(title = "PC2"), zaxis = list(title = "PC3")))
   			                  for (i in 1:nrow(selection)){
@@ -928,28 +994,35 @@ server <- function(input, output, session) {
   			                })
   			         ),
   			         column(6,
+  			                numericInput("sample_nr_peaks", label = "Select a sample to view its detected peaks.", min = 1, max = nrow(selection), value = 1),
   			                renderPlotly({
-  			                  chrom <- plot_ly(x = NULL, y = NULL, type = 'scatter', mode = 'lines') %>% layout(title = "Peaks over TIC", xaxis = list(title = "Retention time (seconds)"), yaxis = list(title = "TotIonCurrent"))
+  			                  chrom <- plot_ly(x = NULL, y = NULL, type = 'scatter', mode = 'markers') %>% layout(title = "Peaks over TIC", xaxis = list(title = "Retention time (seconds)"), yaxis = list(title = "TotIonCurrent"))
   			                  #featspec <- featureSpectra(xset, msLevel = 1, return.type="Spectra")
   			                  load(file = rda_path$file_path_peaks) #loads variable annot_spectra
   			                  spectraData(annot_spectra)
-  			                  tt <- spectraData(annot_spectra)[,c("scanIndex", "peak_id")]
+  			                  tt <- spectraData(annot_spectra)
   			                  #aa <- readRDS(selection$original_XCMSnExp_path[i], refhook = NULL)
-  			                  for (i in 1:nrow(selection)){
+  			                  for (i in round(input$sample_nr_peaks)){
   			                    aa <- filterFile(xset, i)
   			                    #Get ids of peaks in sample
-  			                    tp <- rownames(chromPeaks(xset)[chromPeaks(xset)[,"sample"] == i,])
+  			                    tp <- rownames(chromPeaks(aa))
   			                    
   			                    #Get scanids for peaks in sample
-  			                    p <- tt[,"scanIndex"][tt[, "peak_id"] == tp]
-  			                    
-  			                    print(selection$original_XCMSnExp_path[i])
+  			                    # p <- unique(tt[tt[, "peak_id"] %in% tp, c("scanIndex", "rtime", "totIonCurrent")])
+  			                    # y <- tic(aa)
+  			                    # x <- rtime(aa)
+  			                    # xp <- p[,"rtime"]
+  			                    # yp <- p[,"totIonCurrent"]
+  			                    # peak <- x %in% xp
+  			                    for (peak in 1:length(tp)) {
+  			                      p <- unique(tt[tt[, "peak_id"] == tp[peak], c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
+  			                      xp <- p[,"rtime"]
+  			                      yp <- p[,"totIonCurrent"]
+  			                      chrom <- chrom %>% add_lines(x = xp, y = yp, name = paste(selection$original_file_name[i], "| peak", peak), fill = 'tozeroy')
+  			                    }
   			                    y <- tic(aa)
   			                    x <- rtime(aa)
-  			                    chrom <- chrom %>% add_lines(x = x, y = y, name = paste(selection$original_file_name[i], "|", selection$metadata[i]), fill = 'tozeroy')
-  			                    xp <- rtime(xset[p])
-  			                    yp <- tic(xset[p])
-  			                    chrom <- chrom %>% add_trace(y = yp, x = xp, name = paste('peak', selection$original_file_name[i]), mode = 'markers')
+  			                    chrom <- chrom %>% add_lines(x = x, y = y, name = paste(selection$original_file_name[i], "|", selection$metadata[i]))
   			                  }
   			                  # y <- tic(featspec)
   			                  # x <- rtime(featspec)
@@ -983,7 +1056,35 @@ server <- function(input, output, session) {
   			         column(6,
   			                uiOutput("analysisHeatmap")
   			         )
-  			)
+  			),
+  	    fluidRow(style='max-width:100%;padding:10px;',
+  	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+  	             ),
+  	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+  	                    h5("1. Detection"),
+  	                    selectInput("Peak_method", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2), selected = used_parameters$Peak_method),
+                      renderUI(peak_options)
+  	             ),
+  	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+  	                    h5("2. Refinement"),
+  	                    selectInput("Ref_method", label = "Peak refinement method", choices = list("MergeNeighboringPeaks" = 0, "FilterIntensity" = 1), selected = used_parameters$Ref_method)
+  	             ),
+  	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+  	                    h5("3. Alignment"),
+  	                    selectInput("Align_method", label = "Peak alignment method", choices = list("Obiwarp" = 0, "PeakGroups" = 1), selected = used_parameters$Align_method)
+  	             ),
+  	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+  	                    h5("4. Grouping"),
+  	                    selectInput("Group_method", label = "Peak grouping method", choices = list("PeakDensity" = 0, "MzClust" = 1, "NearestPeaks" = 2), selected = used_parameters$Group_method)
+  	             ),
+  	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+  	                    h5("5. Filling"),
+  	                    numericInput("expandMz", label = "expandMz", 0, value = used_parameters$expandMz),
+  	                    numericInput("expandRt", label = "expandRt", 0, value = used_parameters$expandRt),
+  	                    numericInput("fixedMz", label = "fixedMz", 0, value = used_parameters$fixedMz),
+  	                    numericInput("fixedRt", label = "fixedRt", 0, value = used_parameters$fixedRt)
+  	             )
+  	    )
 	  ))
 	})
 	
@@ -1178,12 +1279,14 @@ server <- function(input, output, session) {
         dir <- getwd()
         dir <- paste(dir, "/processed_data", sep = "")
         if (job_plan >= 1 | job_plan == 7){
+          #range meegeven
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/9 Reading MS data...' WHERE job_id = ", job_id, ";", sep = "")))
           #Load raw files into XCMSnExp-object
           pd <- data.frame(sample_name = massfiles$original_file_name,
                            sample_group = massfiles$metadata,
                            stringsAsFactors = FALSE)
           xset <- readMSData(files = files, pdata = new("NAnnotatedDataFrame", pd), mode = "onDisk")
+          xset <- filterRt(xset, c(as.double(def_params$rtrmin), as.double(def_params$rtrmax)))
         }
         if (job_plan >= 2 | job_plan == 7){
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '4/9 Finding peaks...' WHERE job_id = ", job_id, ";", sep = "")))

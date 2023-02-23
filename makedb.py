@@ -125,6 +125,8 @@ def make_parameter():
     "value DOUBLE, "
     "verboseColumns BOOL, "
     "withWave BOOL, "
+    "rtrmin DOUBLE, "
+    "rtrmax DOUBLE, "
 		"FOREIGN KEY (job_id) REFERENCES job(job_id) ON DELETE CASCADE"
 		");"
 	)
@@ -153,6 +155,13 @@ def make_sample_job():
     ");"
   )
   print("Sample job table created...")
+
+def make_peak():
+  cur.execute("DROP TABLE IF EXISTS sample_job;")
+  cur.exeute("CREATE TABLE peak"
+    
+  )
+
 
 cur.execute("SET GLOBAL local_infile=1;")
 cur.execute("SET FOREIGN_KEY_CHECKS=0;")
