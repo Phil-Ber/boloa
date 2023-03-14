@@ -187,8 +187,6 @@ ui <- fillPage(
 					),
 					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
 					       h5("5. Filling"),
-					       numericInput("expandMz", label = "expandMz", 0),
-					       numericInput("expandRt", label = "expandRt", 0),
 					       numericInput("fixedMz", label = "fixedMz", 0),
 					       numericInput("fixedRt", label = "fixedRt", 0)
 					       )
@@ -275,140 +273,160 @@ ui <- fillPage(
 
 server <- function(input, output, session) {
   nr_files <<- 0
+  
+  default_cent <- tagList(
+    numericInput("ppm", label = "ppm", 32.9),
+    numericInput("min_peakwidth", label = "min_peakwidth", 3.783993),
+    numericInput("max_peakwidth", label = "max_peakwidth", 52.19042),
+    numericInput("snthresh", label = "snthresh", 72.97847),
+    numericInput("prefilter", label = "prefilter", 2),
+    numericInput("value_of_prefilter", label = "value_of_prefilter", 247.2712),
+    selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = 4),
+    numericInput("integrate", label = "integrate", 1),
+    numericInput("mzdiff", label = "mzdiff", 0.6590461),
+    checkboxInput("fitgauss", label = "fitgauss", 0),
+    numericInput("noise", label = "noise", 8778.373),
+    checkboxInput("verboseColumns", label = "verboseColumns", 0)
+  )
+  default_massif <- tagList(
+    numericInput("ppm", label = "ppm", 93.07),
+    numericInput("min_peakwidth", label = "min_peakwidth", 5),
+    numericInput("max_peakwidth", label = "max_peakwidth", 30),
+    numericInput("snthresh", label = "snthresh", 10),
+    numericInput("prefilter", label = "prefilter", 2),
+    numericInput("value_of_prefilter", label = "value_of_prefilter", 328.63),
+    selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4)),
+    numericInput("integrate", label = "integrate", 1),
+    numericInput("mzdiff", label = "mzdiff", 0.01),
+    checkboxInput("fitgauss", label = "fitgauss", 0),
+    numericInput("noise", label = "noise", 0),
+    checkboxInput("verboseColumns", label = "verboseColumns", 0),
+    numericInput("criticalValue", label = "criticalValue", 1.125),
+    numericInput("consecMissedLimit", label = "consecMissedLimit", 2),
+    numericInput("unions", label = "unions", 1),
+    numericInput("checkBack", label = "checkBack", 0),
+    checkboxInput("withWave", label = "withWave", 0)
+  )
+  
+  default_matchedfilter <- tagList(
+    numericInput("binSize", label = "binSize", 0.1),
+    selectInput("impute", label = "impute", choices = list("none" = 0, "lin" = 1, "linbase" = 2, "intlin" = 3, "imputeLinInterpol" = 4)),
+    # numericInput("baseValue", label = "baseValue", 5),
+    # numericInput("distance", label = "distance", 5),
+    numericInput("fwhm", label = "fwhm", 30),
+    numericInput("sigma", label = "sigma", 2.3548),
+    numericInput("max", label = "max", 5),
+    numericInput("snthresh", label = "snthresh", 10),
+    numericInput("steps", label = "steps", 2),
+    numericInput("mzdiff", label = "mzdiff", 0.8),
+    checkboxInput("index", label = "index", 0)
+  )
+  
+  default_mnp <- tagList(
+    numericInput("expandRt", label = "expandRt", 10),
+    numericInput("expandMz", label = "expandMz", 10),
+    numericInput("minProp", label = "minProp", 1)
+  )
+  
+  default_fi <- tagList(
+    numericInput("threshold", label = "threshold", 0),
+    # numericInput("nValues", label = "nValues", 5),
+    # numericInput("value", label = "value", 5)
+  )
+  
+  default_obiwarp <- tagList(
+    #binSize = 1,
+    numericInput("binSize", label = "binSize", 1),
+    # numericInput("centerSample", label = "centerSample", 5),
+    # numericInput("response", label = "response", 1),
+    selectInput("distFun", label = "distFun", choices = list("cor" = 0, "cor_opt" = 1, "cov" = 2, "prd" = 3, "euc" = 4)),
+    # numericInput("gapInit", label = "gapInit", 5),
+    # numericInput("gapExtend", label = "gapExtend", 5),
+    numericInput("factorDiag", label = "factorDiag", 2),
+    numericInput("factorGap", label = "factorGap", 1),
+    checkboxInput("localAlignment", label = "localAlignment", 0),
+    numericInput("initPenalty", label = "initPenalty", 0),
+    # numericInput("subset", label = "subset", 5),
+    selectInput("subsetAdjust", label = "subsetAdjust", choices = list("average" = 0, "previous" = 1))
+  )
+  
+  default_peakgroups <- tagList(
+    numericInput("minFraction", label = "minFraction", 0.9),
+    numericInput("extraPeaks", label = "extraPeaks", 1),
+    selectInput("smooth", label = "smooth", choices = list("loess" = 0, "linear" = 1)),
+    numericInput("span", label = "span", 0.2),
+    selectInput("family", label = "family", choices = list("gaussian" = 0, "symmetric" = 1)),
+    # numericInput("peakGroupsMatrix", label = "peakGroupsMatrix", 5),
+    # numericInput("subset", label = "subset", 5),
+    selectInput("subsetAdjust", label = "subsetAdjust", choices = list("average" = 0, "previous" = 1))
+  )
+  
+  default_pd <- tagList(
+    numericInput("bw", label = "bw", 30),
+    numericInput("minFraction", label = "minFraction", 0.5),
+    numericInput("minSamples", label = "minSamples", 1),
+    numericInput("binSize", label = "binSize", 0.25),
+    numericInput("maxFeatures", label = "maxFeatures", 50)
+  )
+  
+  default_mzc <- tagList(
+    numericInput("absMz", label = "absMz", 0),
+    numericInput("minFraction", label = "minFraction", 0.5),
+    numericInput("minSamples", label = "minSamples", 1)
+  )
+  
+  default_np <- tagList(
+    numericInput("mzVsRtBalance", label = "mzVsRtBalance", 10),
+    numericInput("absMz", label = "absMz", 0.2),
+    numericInput("absRt", label = "absRt", 15),
+    numericInput("kNN", label = "kNN", 10)
+  )
+  
   output$job_analysis <- renderUI(tagList(
     h5('Please select a finished job in the "Jobs" panel to analyse data')
   ))
   observeEvent(input$Peak_method, {
     if (input$Peak_method == 0) {
-      peak_options <- tagList(
-        numericInput("ppm", label = "ppm", 93.07),
-        numericInput("min_peakwidth", label = "min_peakwidth", 5),
-        numericInput("max_peakwidth", label = "max_peakwidth", 30),
-        numericInput("snthresh", label = "snthresh", 10),
-        numericInput("prefilter", label = "prefilter", 2),
-        numericInput("value_of_prefilter", label = "value_of_prefilter", 328.63),
-        selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4)),
-        numericInput("integrate", label = "integrate", 1),
-        numericInput("mzdiff", label = "mzdiff", 0.01),
-        checkboxInput("fitgauss", label = "fitgauss", 0),
-        numericInput("noise", label = "noise", 0),
-        checkboxInput("verboseColumns", label = "verboseColumns", 0)
-      )
+      peak_options <- default_cent
     }
     else if (input$Peak_method == 1) {
-      peak_options <- tagList(
-        numericInput("ppm", label = "ppm", 93.07),
-        numericInput("min_peakwidth", label = "min_peakwidth", 5),
-        numericInput("max_peakwidth", label = "max_peakwidth", 30),
-        numericInput("snthresh", label = "snthresh", 10),
-        numericInput("prefilter", label = "prefilter", 2),
-        numericInput("value_of_prefilter", label = "value_of_prefilter", 328.63),
-        selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4)),
-        numericInput("integrate", label = "integrate", 1),
-        numericInput("mzdiff", label = "mzdiff", 0.01),
-        checkboxInput("fitgauss", label = "fitgauss", 0),
-        numericInput("noise", label = "noise", 0),
-        checkboxInput("verboseColumns", label = "verboseColumns", 0),
-        numericInput("criticalValue", label = "criticalValue", 1.125),
-        numericInput("consecMissedLimit", label = "consecMissedLimit", 2),
-        numericInput("unions", label = "unions", 1),
-        numericInput("checkBack", label = "checkBack", 0),
-        checkboxInput("withWave", label = "withWave", 0)
-      )
+      peak_options <- default_massif
     }
     else if (input$Peak_method == 2) {
-      peak_options <- tagList(
-        numericInput("binSize", label = "binSize", 0.1),
-        selectInput("impute", label = "impute", choices = list("none" = 0, "lin" = 1, "linbase" = 2, "intlin" = 3, "imputeLinInterpol" = 4)),
-        # numericInput("baseValue", label = "baseValue", 5),
-        # numericInput("distance", label = "distance", 5),
-        numericInput("fwhm", label = "fwhm", 30),
-        numericInput("sigma", label = "sigma", 2.3548),
-        numericInput("max", label = "max", 5),
-        numericInput("snthresh", label = "snthresh", 10),
-        numericInput("steps", label = "steps", 2),
-        numericInput("mzdiff", label = "mzdiff", 0.8),
-        checkboxInput("index", label = "index", 0)
-      )
+      peak_options <- default_matchedfilter
     }
     output$peak_parameters <- renderUI(peak_options)
   })
   
   observeEvent(input$Ref_method, {
     if (input$Ref_method == 0) {
-      ref_options <- tagList(
-        numericInput("expandRt", label = "expandRt", 2),
-        numericInput("expandMz", label = "expandMz", 0),
-        numericInput("minProp", label = "minProp", 0.75)
-      )
+      ref_options <- default_mnp
     }
     else if (input$Ref_method == 1) {
-      ref_options <- tagList(
-        numericInput("threshold", label = "threshold", 0),
-        # numericInput("nValues", label = "nValues", 5),
-        # numericInput("value", label = "value", 5)
-      )
+      ref_options <- default_fi
     }
     output$refinement_parameters <- renderUI(ref_options)
   })
    
   observeEvent(input$Align_method, {
     if (input$Align_method == 0) {
-      alig_options <- tagList(
-        #binSize = 1,
-        numericInput("binSize", label = "binSize", 1),
-        # numericInput("centerSample", label = "centerSample", 5),
-        # numericInput("response", label = "response", 1),
-        selectInput("distFun", label = "distFun", choices = list("cor" = 0, "cor_opt" = 1, "cov" = 2, "prd" = 3, "euc" = 4)),
-        # numericInput("gapInit", label = "gapInit", 5),
-        # numericInput("gapExtend", label = "gapExtend", 5),
-        numericInput("factorDiag", label = "factorDiag", 2),
-        numericInput("factorGap", label = "factorGap", 1),
-        checkboxInput("localAlignment", label = "localAlignment", 0),
-        numericInput("initPenalty", label = "initPenalty", 0),
-        # numericInput("subset", label = "subset", 5),
-        selectInput("subsetAdjust", label = "subsetAdjust", choices = list("average" = 0, "previous" = 1))
-      )
+      alig_options <- default_obiwarp
     }
     else if (input$Align_method == 1) {
-      alig_options <- tagList(
-        numericInput("minFraction", label = "minFraction", 0.9),
-        numericInput("extraPeaks", label = "extraPeaks", 1),
-        selectInput("smooth", label = "smooth", choices = list("loess" = 0, "linear" = 1)),
-        numericInput("span", label = "span", 0.2),
-        selectInput("family", label = "family", choices = list("gaussian" = 0, "symmetric" = 1)),
-        # numericInput("peakGroupsMatrix", label = "peakGroupsMatrix", 5),
-        # numericInput("subset", label = "subset", 5),
-        selectInput("subsetAdjust", label = "subsetAdjust", choices = list("average" = 0, "previous" = 1))
-      )
+      alig_options <- default_peakgroups
     }
     output$alignment_parameters <- renderUI(alig_options)
   })
   
   observeEvent(input$Group_method, {
     if (input$Group_method == 0) {
-      group_options <- tagList(
-        numericInput("bw", label = "bw", 30),
-        numericInput("minFraction", label = "minFraction", 0.5),
-        numericInput("minSamples", label = "minSamples", 1),
-        numericInput("binSize", label = "binSize", 0.25),
-        numericInput("maxFeatures", label = "maxFeatures", 50)
-      )
+      group_options <- default_pd
     }
     else if (input$Group_method == 1) {
-      group_options <- tagList(
-        numericInput("absMz", label = "absMz", 0),
-        numericInput("minFraction", label = "minFraction", 0.5),
-        numericInput("minSamples", label = "minSamples", 1)
-      )
+      group_options <- default_mzc
     }
     else if (input$Group_method == 2) {
-      group_options <- tagList(
-        numericInput("mzVsRtBalance", label = "mzVsRtBalance", 10),
-        numericInput("absMz", label = "absMz", 0.2),
-        numericInput("absRt", label = "absRt", 15),
-        numericInput("kNN", label = "kNN", 10)
-      )
+      group_options <- default_np
     }
     output$grouping_parameters <- renderUI(group_options)
   })
@@ -443,7 +461,7 @@ server <- function(input, output, session) {
 		sample_table_content$chromatography_type[sample_table_content$chromatography_type == 1] <- "Liquid"
 		sample_table_content$chromatography_type[sample_table_content$chromatography_type == 2] <- "Gas"
 		output$uploaded_samples <- DT::renderDataTable({
-			DT::datatable(sample_table_content[, c(7, 3, 5, 4, 6)])
+			DT::datatable(sample_table_content[, c(1, 7, 3, 5, 4, 6)])
 		}, server = FALSE)
 		query <- stringr::str_glue("SELECT * FROM job ORDER BY start_time DESC;")
 		job_table_content <<- get_query(query)
@@ -888,6 +906,80 @@ server <- function(input, output, session) {
 	  }
 	})
 	
+	#Function to tweak parameters of a previously processed job
+	observeEvent(input$resub1 | input$resub2 | input$resub3 | input$resub4 | input$resub5, ignoreInit =  T, {
+	  job_plan <- NA
+	  if (input$resub1 == 1) {
+	    job_plan <- 2
+	  }
+	  else if (input$resub2 == 1) {
+	    job_plan <- 3
+	  }
+	  else if (input$resub3 == 1) {
+	    job_plan <- 4
+	  }
+	  else if (input$resub4 == 1) {
+	    job_plan <- 5
+	  }
+	  else if (input$resub5 == 1) {
+	    job_plan <- 6
+	  }
+	  if (is.na(job_plan) == FALSE) {
+	    job_id <- job_table_content[input$jobs_rows_selected, ]$job_id
+	    params <- c()
+	    used_param_names <- c()
+	    for (p in all_params) {
+	      if(is.null(input[[paste(p, "A", sep = "")]]) & p != "rtrange") {
+	        params <- c(params, "NULL")
+	        used_param_names <- c(used_param_names, p) 
+	      }
+	      else {
+	        if (p == "rtrange") {
+	          #params <- c(params, input[[paste(p, "A", sep = "")]][1], input[[paste(p, "A", sep = "")]][2])
+	          #used_param_names <- c(used_param_names, "rtrmin", "rtrmax")
+	        }
+	        else {
+	          params <- c(params, input[[paste(p, "A", sep = "")]])
+	          used_param_names <- c(used_param_names, p) 
+	        }
+	      }
+	    }
+	    updatestring <- ""
+	    for (i in 1:length(params)) {
+	      if (is.na(params[i])) {
+	        updatestring <- paste(updatestring, used_param_names[i], "=", "NULL", sep = "")
+	      } else {
+	        if (params[i] == "TRUE"){
+	          params[i] <- 1
+	        }
+	        else if (params[i] == "FALSE") {
+	          params[i] <- 0
+	        }
+	        if (used_param_names[i] == "index"){
+	          updatestring <- paste(updatestring, "`index`", "=", params[i], sep = "")
+	        }
+	        else{
+	          updatestring <- paste(updatestring, used_param_names[i], "=", params[i], sep = "")
+	        }
+	      }
+	      if (i != length(params)) {
+	        updatestring <- paste(updatestring, ",", sep = "")
+	      }
+	    }
+	    send_query(stringr::str_glue(paste("UPDATE parameter SET ", updatestring, " WHERE job_id = ", job_id, ";", sep = "")))
+	    query <- stringr::str_glue(paste("SELECT * FROM sample WHERE sample_hash IN (SELECT sample_hash FROM sample_job WHERE job_id = ", job_id, ");", sep = ""))
+	    jobfiles <<- get_query(query)
+	    names(params) <- used_param_names
+	    params <- c(params, job_id=job_id)
+	    params <- as.data.frame(t(params))
+	    #future({xcms_data_processing(jobfiles, params, 0, job_id, db_usr, db_pwd, job_plan)}, seed = NULL)
+	    xcms_data_processing(jobfiles, params, 0, job_id, db_usr, db_pwd, job_plan)
+	    session$reload()
+	    updateTabsetPanel(session, "tabSwitch",
+	                      selected = "p3")
+	  }
+	})
+	
 	#Actions involving job analysis
 	observeEvent(input$analyse, {
 	  job_id <- job_table_content[input$jobs_rows_selected, ]$job_id
@@ -907,56 +999,125 @@ server <- function(input, output, session) {
 	  selection <- get_query(query4)
 	  if (used_parameters$Peak_method == 0) {
 	    peak_options <- tagList(
-	      numericInput("ppm", label = "ppm", value = used_parameters$ppm),
-	      numericInput("min_peakwidth", label = "min_peakwidth", value = used_parameters$min_peakwidth),
-	      numericInput("max_peakwidth", label = "max_peakwidth", value = used_parameters$max_peakwidth),
-	      numericInput("snthresh", label = "snthresh", value = used_parameters$snthresh),
-	      numericInput("prefilter", label = "prefilter", value = used_parameters$prefilter),
-	      numericInput("value_of_prefilter", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
-	      selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
-	      numericInput("integrate", label = "integrate", value = used_parameters$integrate),
-	      numericInput("mzdiff", label = "mzdiff", value = used_parameters$mzdiff),
-	      checkboxInput("fitgauss", label = "fitgauss", value = used_parameters$fitgauss),
-	      numericInput("noise", label = "noise", value = used_parameters$noise),
-	      checkboxInput("verboseColumns", label = "verboseColumns", value = used_parameters$verboseColumns)
+	      numericInput("ppmA", label = "ppm", value = used_parameters$ppm),
+	      numericInput("min_peakwidthA", label = "min_peakwidth", value = used_parameters$min_peakwidth),
+	      numericInput("max_peakwidthA", label = "max_peakwidth", value = used_parameters$max_peakwidth),
+	      numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
+	      numericInput("prefilterA", label = "prefilter", value = used_parameters$prefilter),
+	      numericInput("value_of_prefilterA", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
+	      selectInput("mzCenterFunA", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
+	      numericInput("integrateA", label = "integrate", value = used_parameters$integrate),
+	      numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
+	      checkboxInput("fitgaussA", label = "fitgauss", value = used_parameters$fitgauss),
+	      numericInput("noiseA", label = "noise", value = used_parameters$noise),
+	      checkboxInput("verboseColumnsA", label = "verboseColumns", value = used_parameters$verboseColumns)
 	    )
 	  }
 	  else if (used_parameters$Peak_method == 1) {
 	    peak_options <- tagList(
-	      numericInput("ppm", label = "ppm", value = used_parameters$ppm),
-	      numericInput("min_peakwidth", label = "min_peakwidth", value = used_parameters$min_peakwidth),
-	      numericInput("max_peakwidth", label = "max_peakwidth", value = used_parameters$max_peakwidth),
-	      numericInput("snthresh", label = "snthresh", value = used_parameters$snthresh),
-	      numericInput("prefilter", label = "prefilter", value = used_parameters$prefilter),
-	      numericInput("value_of_prefilter", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
-	      selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
-	      numericInput("integrate", label = "integrate", value = used_parameters$integrate),
-	      numericInput("mzdiff", label = "mzdiff", value = used_parameters$mzdiff),
-	      checkboxInput("fitgauss", label = "fitgauss", value = used_parameters$fitgauss),
-	      numericInput("noise", label = "noise", value = used_parameters$noise),
-	      checkboxInput("verboseColumns", label = "verboseColumns", value = used_parameters$verboseColumns),
-	      numericInput("criticalValue", label = "criticalValue", value = used_parameters$criticalValue),
-	      numericInput("consecMissedLimit", label = "consecMissedLimit", value = used_parameters$consecMissedLimit),
-	      numericInput("unions", label = "unions", value = used_parameters$unions),
-	      numericInput("checkBack", label = "checkBack", value = used_parameters$checkBack),
-	      checkboxInput("withWave", label = "withWave", value = used_parameters$withWave)
+	      numericInput("ppmA", label = "ppm", value = used_parameters$ppm),
+	      numericInput("min_peakwidthA", label = "min_peakwidth", value = used_parameters$min_peakwidth),
+	      numericInput("max_peakwidthA", label = "max_peakwidth", value = used_parameters$max_peakwidth),
+	      numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
+	      numericInput("prefilterA", label = "prefilter", value = used_parameters$prefilter),
+	      numericInput("value_of_prefilterA", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
+	      selectInput("mzCenterFunA", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
+	      numericInput("integrateA", label = "integrate", value = used_parameters$integrate),
+	      numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
+	      checkboxInput("fitgaussA", label = "fitgauss", value = used_parameters$fitgauss),
+	      numericInput("noiseA", label = "noise", value = used_parameters$noise),
+	      checkboxInput("verboseColumnsA", label = "verboseColumns", value = used_parameters$verboseColumns),
+	      numericInput("criticalValueA", label = "criticalValue", value = used_parameters$criticalValue),
+	      numericInput("consecMissedLimitA", label = "consecMissedLimit", value = used_parameters$consecMissedLimit),
+	      numericInput("unionsA", label = "unions", value = used_parameters$unions),
+	      numericInput("checkBackA", label = "checkBack", value = used_parameters$checkBack),
+	      checkboxInput("withWaveA", label = "withWave", value = used_parameters$withWave)
 	    )
 	  }
 	  else if (used_parameters$Peak_method == 2) {
 	    peak_options <- tagList(
-	      numericInput("binSize", label = "binSize", value = used_parameters$binSize),
-	      selectInput("impute", label = "impute", choices = list("none" = 0, "lin" = 1, "linbase" = 2, "intlin" = 3, "imputeLinInterpol" = 4), selected = used_parameters$impute),
+	      numericInput("binSizeA", label = "binSize", value = used_parameters$binSize),
+	      selectInput("imputeA", label = "impute", choices = list("none" = 0, "lin" = 1, "linbase" = 2, "intlin" = 3, "imputeLinInterpol" = 4), selected = used_parameters$impute),
 	      # numericInput("baseValue", label = "baseValue", 5),
 	      # numericInput("distance", label = "distance", 5),
-	      numericInput("fwhm", label = "fwhm", value = used_parameters$fwhm),
-	      numericInput("sigma", label = "sigma", value = used_parameters$sigma),
-	      numericInput("max", label = "max", value = used_parameters$max),
-	      numericInput("snthresh", label = "snthresh", value = used_parameters$snthresh),
-	      numericInput("steps", label = "steps", value = used_parameters$steps),
-	      numericInput("mzdiff", label = "mzdiff", value = used_parameters$mzdiff),
-	      checkboxInput("index", label = "index", value = used_parameters$index)
+	      numericInput("fwhmA", label = "fwhm", value = used_parameters$fwhm),
+	      numericInput("sigmaA", label = "sigma", value = used_parameters$sigma),
+	      numericInput("maxA", label = "max", value = used_parameters$max),
+	      numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
+	      numericInput("stepsA", label = "steps", value = used_parameters$steps),
+	      numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
+	      checkboxInput("indexA", label = "index", value = used_parameters$index)
 	    )
 	  }
+	  
+	  if (used_parameters$Ref_method == 0) {
+	    ref_options <- tagList(
+	      numericInput("expandRtA", label = "expandRt", value = used_parameters$expandRt),
+	      numericInput("expandMzA", label = "expandMz", value = used_parameters$expandMz),
+	      numericInput("minPropA", label = "minProp", value = used_parameters$minProp)
+	    )
+	  }
+	  else if (used_parameters$Ref_method == 1){
+	    ref_options <- tagList(
+	      numericInput("thresholdA", label = "threshold", value = used_parameters$threshold)
+	    )
+	  }
+	  
+	  if (used_parameters$Align_method == 0) {
+	    aln_options <- tagList(
+	      #binSize = 1,
+	      numericInput("binSizeA", label = "binSize", used_parameters$binSize),
+	      # numericInput("centerSample", label = "centerSample", 5),
+	      # numericInput("response", label = "response", 1),
+	      selectInput("distFunA", label = "distFun", choices = list("cor" = 0, "cor_opt" = 1, "cov" = 2, "prd" = 3, "euc" = 4), selected = used_parameters$distFun),
+	      # numericInput("gapInit", label = "gapInit", 5),
+	      # numericInput("gapExtend", label = "gapExtend", 5),
+	      numericInput("factorDiagA", label = "factorDiag", used_parameters$factorDiag),
+	      numericInput("factorGapA", label = "factorGap", used_parameters$factorGap),
+	      checkboxInput("localAlignmentA", label = "localAlignment", used_parameters$localAlignment),
+	      numericInput("initPenaltyA", label = "initPenalty", used_parameters$initPenalty),
+	      # numericInput("subset", label = "subset", 5),
+	      selectInput("subsetAdjustA", label = "subsetAdjust", choices = list("average" = 0, "previous" = 1), selected = used_parameters$subsetAdjust)
+	    )
+	  }
+	  else if (used_parameters$Align_method == 1) {
+	    aln_options <- tagList(
+	      numericInput("minFractionA", label = "minFraction", used_parameters$minFraction),
+	      numericInput("extraPeaksA", label = "extraPeaks", used_parameters$extraPeaks),
+	      selectInput("smoothA", label = "smooth", choices = list("loess" = 0, "linear" = 1), selected = used_parameters$smooth),
+	      numericInput("spanA", label = "span", used_parameters$span),
+	      selectInput("familyA", label = "family", choices = list("gaussian" = 0, "symmetric" = 1), selected = used_parameters$family),
+	      # numericInput("peakGroupsMatrix", label = "peakGroupsMatrix", 5),
+	      # numericInput("subset", label = "subset", 5),
+	      selectInput("subsetAdjustA", label = "subsetAdjust", choices = list("average" = 0, "previous" = 1), selected = used_parameters$subsetAdjust)
+	    )
+	  }
+	  
+	  if (used_parameters$Group_method == 0) {
+	    grp_options <- tagList(
+	      numericInput("bwA", label = "bw", used_parameters$bw),
+	      numericInput("minFractionA", label = "minFraction", used_parameters$minFraction),
+	      numericInput("minSamplesA", label = "minSamples", used_parameters$minSamples),
+	      numericInput("binSizeA", label = "binSize", used_parameters$binSize),
+	      numericInput("maxFeaturesA", label = "maxFeatures", used_parameters$maxFeatures)
+	    )
+	  }
+	  else if (used_parameters$Group_method == 1) {
+	    grp_options <- tagList(
+	      numericInput("absMzA", label = "absMz", used_parameters$absMz),
+	      numericInput("minFractionA", label = "minFraction", used_parameters$minFraction),
+	      numericInput("minSamplesA", label = "minSamples", used_parameters$minSamples)
+	    )
+	  }
+	  else if (used_parameters$Group_method == 2) {
+	    grp_options <- tagList(
+	      numericInput("mzVsRtBalanceA", label = "mzVsRtBalance", used_parameters$mzVsRtBalance),
+	      numericInput("absMzA", label = "absMz", used_parameters$absMz),
+	      numericInput("absRtA", label = "absRt", used_parameters$absRt),
+	      numericInput("kNNA", label = "kNN", used_parameters$kNN)
+	    )
+	  }
+	  
 	  output$job_analysis <- renderUI(tagList(
 	    h4(paste("Output of job", job_id, ":\n", job_table_content[input$jobs_rows_selected, ]$job_name)),
         fluidRow(style='max-width:100%;padding:10px;',
@@ -999,7 +1160,6 @@ server <- function(input, output, session) {
   			                  chrom <- plot_ly(x = NULL, y = NULL, type = 'scatter', mode = 'markers') %>% layout(title = "Peaks over TIC", xaxis = list(title = "Retention time (seconds)"), yaxis = list(title = "TotIonCurrent"))
   			                  #featspec <- featureSpectra(xset, msLevel = 1, return.type="Spectra")
   			                  load(file = rda_path$file_path_peaks) #loads variable annot_spectra
-  			                  spectraData(annot_spectra)
   			                  tt <- spectraData(annot_spectra)
   			                  #aa <- readRDS(selection$original_XCMSnExp_path[i], refhook = NULL)
   			                  for (i in round(input$sample_nr_peaks)){
@@ -1062,27 +1222,35 @@ server <- function(input, output, session) {
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("1. Detection"),
-  	                    selectInput("Peak_method", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2), selected = used_parameters$Peak_method),
-                      renderUI(peak_options)
+  	                    selectInput("Peak_methodA", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2), selected = used_parameters$Peak_method),
+                      renderUI(peak_options),
+                      actionButton("resub1", label = "\n Rerun")
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("2. Refinement"),
-  	                    selectInput("Ref_method", label = "Peak refinement method", choices = list("MergeNeighboringPeaks" = 0, "FilterIntensity" = 1), selected = used_parameters$Ref_method)
+  	                    selectInput("Ref_methodA", label = "Peak refinement method", choices = list("MergeNeighboringPeaks" = 0, "FilterIntensity" = 1), selected = used_parameters$Ref_method),
+  	                    renderUI(ref_options),
+  	                    actionButton("resub2", label = "\n Rerun")
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("3. Alignment"),
-  	                    selectInput("Align_method", label = "Peak alignment method", choices = list("Obiwarp" = 0, "PeakGroups" = 1), selected = used_parameters$Align_method)
+  	                    selectInput("Align_methodA", label = "Peak alignment method", choices = list("Obiwarp" = 0, "PeakGroups" = 1), selected = used_parameters$Align_method),
+  	                    renderUI(aln_options),
+  	                    actionButton("resub3", label = "\n Rerun")
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("4. Grouping"),
-  	                    selectInput("Group_method", label = "Peak grouping method", choices = list("PeakDensity" = 0, "MzClust" = 1, "NearestPeaks" = 2), selected = used_parameters$Group_method)
+  	                    selectInput("Group_methodA", label = "Peak grouping method", choices = list("PeakDensity" = 0, "MzClust" = 1, "NearestPeaks" = 2), selected = used_parameters$Group_method),
+  	                    renderUI(grp_options),
+  	                    actionButton("resub4", label = "\n Rerun")
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("5. Filling"),
-  	                    numericInput("expandMz", label = "expandMz", 0, value = used_parameters$expandMz),
-  	                    numericInput("expandRt", label = "expandRt", 0, value = used_parameters$expandRt),
-  	                    numericInput("fixedMz", label = "fixedMz", 0, value = used_parameters$fixedMz),
-  	                    numericInput("fixedRt", label = "fixedRt", 0, value = used_parameters$fixedRt)
+  	                    numericInput("expandMzA", label = "expandMz", 0, value = used_parameters$expandMz),
+  	                    numericInput("expandRtA", label = "expandRt", 0, value = used_parameters$expandRt),
+  	                    numericInput("fixedMzA", label = "fixedMz", 0, value = used_parameters$fixedMz),
+  	                    numericInput("fixedRtA", label = "fixedRt", 0, value = used_parameters$fixedRt),
+  	                    actionButton("resub5", label = "\n Rerun")
   	             )
   	    )
 	  ))
@@ -1095,32 +1263,6 @@ server <- function(input, output, session) {
   mass_data_visualisation <- function(){
     
   }
-	
-  #xcmsSet <- mSet2xcmsSet(mSet)
-  mSet2xcmsSet <- function(mSet) {
-    #' #' This function converts an mSet object into an xcmsSet object
-    #' xs <- new("XCMSnExpms")
-    #' xs@chromPeaks <- mSet@peakfilling$msFeatureData$chromPeaks
-    #' rts <- list()
-    #' if (class(mSet@rawOnDisk)[1] == "OnDiskMSnExp") {
-    #'   format <- "onDiskData"
-    #' }
-    #' else {
-    #'   format <- "inMemoryData"
-    #' }
-    #' rts$raw <- rtime(mSet@rawOnDisk)
-    #' rts$corrected <- mSet@peakfilling$msFeatureData$adjustedRT
-    #' xs@rt <- rts
-    #' xs@phenoData <- pData(mSet@rawOnDisk@phenoData)
-    #' xs@filepaths <- fileNames(mSet@rawOnDisk)
-    #' xs@mslevel <- 1
-    #' xs@scanrange <- range(scanIndex(mSet@rawOnDisk))
-    #' if (any(mSet@peakfilling$msFeatureData$chromPeakData$is_filled)) {
-    #'   fld <- which(mSet@peakfilling$msFeatureData$chromPeakData$is_filled)
-    #'   xs@filled <- as.integer(fld)
-    #' }
-    #' return(xs)
-  } 
   
 	#################
 	###########       ASYNC FUNCTIONS
@@ -1216,7 +1358,7 @@ server <- function(input, output, session) {
 	}
 
   xcms_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pw, job_plan){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
-    register(bpstart(MulticoreParam(10)))
+    register(bpstart(MulticoreParam(8)))
     #parameters[] <- lapply(parameters, function(x) as.double(as.numeric(x)))
     # query <- stringr::str_glue("SELECT * FROM parameter WHERE job_id = '", job_id, "';")
     # def_params <- get_query(query)
@@ -1264,13 +1406,16 @@ server <- function(input, output, session) {
         files <- massfiles$file_path
         if (preset == 3) {
           param_initial <- SetPeakParam(platform = "general")
+          jstep <- 1
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '1/9 Performing ROI extraction...' WHERE job_id = ", job_id, ";", sep = "")))
           raw_train <- PerformROIExtraction(files, rt.idx = 0.2, rmConts = FALSE, plot = FALSE)
+          jstep <- 2
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '2/9 Performing parameter optimization...' WHERE job_id = ", job_id, ";", sep = "")))
           def_params <- PerformParamsOptimization(raw_train, param = param_initial, ncore = 5)
           send_query(stringr::str_glue(paste("UPDATE parameter SET min_peakwidth = ", toString(def_params$min_peakwidth), ", max_peakwidth = ", toString(def_params$max_peakwidth), ", mzdiff = ", toString(def_params$mzdiff), ", snthresh = ", toString(def_params$snthresh), ", bw = ", toString(def_params$bw), ", Peak_method = '", toString(def_params$Peak_method), "', ppm = ", toString(def_params$ppm), ", noise = ", toString(def_params$noise), ", prefilter = ", toString(def_params$prefilter), ", value_of_prefilter = ", toString(def_params$value_of_prefilter), ", minFraction = ", toString(def_params$minFraction), ", minSamples = ", toString(def_params$minSamples), ", maxFeatures = ", toString(def_params$maxFeatures), ", fitgauss = ", toString(def_params$fitgauss), ", mzCenterFun = '", toString(def_params$mzCenterFun), "', integrate = ", toString(def_params$integrate), ", extra = ", toString(def_params$extra), ", span = ", toString(def_params$span), ", smooth = '", toString(def_params$smooth), "', family = '", toString(def_params$family), "', polarity = '", toString(def_params$polarity), "', perc_fwhm = ", toString(def_params$perc_fwhm), ", max_charge = ", toString(def_params$max_charge), ", max_iso = ", toString(def_params$max_iso), ", corr_eic_th = ", toString(def_params$corr_eic_th), ", mz_abs_add = ", toString(def_params$mz_abs_add), ", rmConts = ", toString(def_params$rmConts), ", RT_method = '", toString(def_params$RT_method), "' WHERE job_id = ", job_id, ";", sep = "")))
         }
         else {
+          print(def_params)
           def_params[is.na(def_params)] <- 0
           # def_params <- SetPeakParam(Peak_method = parameters$Peak_method, RT_method = parameters$RT_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minFraction), minSamples = as.double(parameters$minSamples), maxFeatures = as.double(parameters$maxFeatures), mzCenterFun = parameters$mzCenterFun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmConts) #verboseColumns
           #def_params <- parameters
@@ -1278,7 +1423,8 @@ server <- function(input, output, session) {
         #processing
         dir <- getwd()
         dir <- paste(dir, "/processed_data", sep = "")
-        if (job_plan >= 1 | job_plan == 7){
+        if (job_plan == 7){
+          jstep <- 3
           #range meegeven
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/9 Reading MS data...' WHERE job_id = ", job_id, ";", sep = "")))
           #Load raw files into XCMSnExp-object
@@ -1287,10 +1433,14 @@ server <- function(input, output, session) {
                            stringsAsFactors = FALSE)
           xset <- readMSData(files = files, pdata = new("NAnnotatedDataFrame", pd), mode = "onDisk")
           xset <- filterRt(xset, c(as.double(def_params$rtrmin), as.double(def_params$rtrmax)))
+        } else {
+          rdaquer <- stringr::str_glue(paste("SELECT * FROM processed_sample WHERE job_id = ", job_id, ";", sep = ""))
+          rda_path <- get_query(rdaquer)
+          load(file=toString(rda_path$file_path_rda))
         }
         if (job_plan >= 2 | job_plan == 7){
+          jstep <- 4
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '4/9 Finding peaks...' WHERE job_id = ", job_id, ";", sep = "")))
-
           
           #Find peaks
           if (as.integer(def_params$Peak_method) == 0){
@@ -1302,9 +1452,9 @@ server <- function(input, output, session) {
               mzCenterFun = c("wMean", "mean", "apex", "wmMeanApex3", "meanApex3")[as.integer(def_params$mzCenterFun) + 1],
               integrate = as.double(def_params$integrate),
               mzdiff = as.double(def_params$mzdiff),
-              fitgauss = as.logical(def_params$fitgauss),
+              fitgauss = as.logical(def_params$fitgauss)  %>% replace(is.na(.), FALSE),
               noise = as.double(def_params$noise),
-              verboseColumns = as.logical(def_params$verboseColumns)
+              verboseColumns = as.logical(def_params$verboseColumns) %>% replace(is.na(.), FALSE)
               #roiList = list(),
               #firstBaselineCheck = TRUE,
               #roiScales = numeric(),
@@ -1317,7 +1467,7 @@ server <- function(input, output, session) {
               peakwidth = c(as.double(def_params$min_peakwidth), as.double(def_params$max_peakwidth)),
               snthresh = as.double(def_params$snthresh),
               prefilter = c(as.double(def_params$prefilter), as.double(def_params$value_of_prefilter)),
-              mzCenterFun = c("wMean", "mean", "apex", "wmMeanApex3", "meanApex3")[as.integer(def_params$mzCenterFun) + 1],
+              mzCenterFun = c("wMean", "mean", "apex", "wMeanApex3", "meanApex3")[as.integer(def_params$mzCenterFun) + 1],
               integrate = as.double(def_params$integrate),
               mzdiff = as.double(def_params$mzdiff),
               fitgauss = as.logical(def_params$fitgauss),
@@ -1348,9 +1498,11 @@ server <- function(input, output, session) {
           else {
             return()
           }
+          print(peak_params)
           xset <-findChromPeaks(xset, param = peak_params)
         }
         if (job_plan >= 3 | job_plan == 7){
+          jstep <- 5
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '5/9 Refining peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           #Peak refinement
           if (preset == 3) {
@@ -1377,6 +1529,7 @@ server <- function(input, output, session) {
           xset <- refineChromPeaks(xset, refmeth)
         }
         if (job_plan >= 4 | job_plan == 7){
+          jstep <- 6
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '6/9 Aligning peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           #Peak alignment
           if (preset == 3) {
@@ -1415,6 +1568,7 @@ server <- function(input, output, session) {
           xset <- adjustRtime(xset, param = align_param)
         }
         if (job_plan >= 5 | job_plan == 7){
+          jstep <- 7
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '7/9 Grouping peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           if (preset == 3) {
             peak_group_param <- PeakDensityParam()
@@ -1452,6 +1606,7 @@ server <- function(input, output, session) {
           xset <- groupChromPeaks(xset, param = peak_group_param)
         }
         if (job_plan >= 6 | job_plan == 7){
+          jstep <- 8
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '8/9 Filling peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           # fillparam <- ChromPeakAreaParam(
           #     # mzmin = function(z) quantile(z, probs = 0.25),
@@ -1475,6 +1630,7 @@ server <- function(input, output, session) {
           save(xset, file = paste(dir, "/", job_id, ".rda", sep = ""))
         }
         if (job_plan == 7){
+          jstep <- 9
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '9/9 Annotating peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           # intmzs <- intensity(xset)
           # intmzs <- split(intmzs, f = fromFile(xset))
@@ -1502,7 +1658,7 @@ server <- function(input, output, session) {
       },
       error = function(cnd){
         print(cnd)
-        send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED', end_time = '", format(Sys.time() + 60*60, "%Y-%m-%d %X"), "' WHERE job_id = ", job_id, ";", sep = "")))
+        send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED AT ", jstep, "/9', end_time = '", format(Sys.time() + 60*60, "%Y-%m-%d %X"), "' WHERE job_id = ", job_id, ";", sep = "")))
         return(NA)
       }
     )
