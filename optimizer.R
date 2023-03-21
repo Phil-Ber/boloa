@@ -149,7 +149,6 @@ while (mean(edf[,1]) >= 0.10 | tries < 100) {
   }
   edf <- rbind(edf, new_add)
   prev_add <- new_add
-  write.table(edf, file = "/exports/nas/berends.p/boloa/optimize_screen_2.csv", sep = ",", append = TRUE, quote = FALSE,
+  write.table(new_add, file = "/exports/nas/berends.p/boloa/optimize_screen_2.csv", sep = ",", append = TRUE, quote = FALSE,
               col.names = FALSE, row.names = FALSE)
-  
 }
