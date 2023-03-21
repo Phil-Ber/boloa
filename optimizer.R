@@ -6,7 +6,9 @@ suppressMessages(library(dplyr))
 ### spread.
 ###
 
-set.seed(154324)
+print("Running optimization...")
+
+set.seed(143241)
 register(bpstart(MulticoreParam(8)))
 ### Manually counted peaks with the corresponding file locations
 ## Lower peak limit
@@ -30,7 +32,6 @@ peak_margin <<- 4
 pd <- data.frame(sample_name = c("Blanco2_1", "T0128_1150", 'QC4_6'), sample_group = c("Blanco2", "A", "QC4"), stringsAsFactors = FALSE)
 raw_data <- readMSData(files = msfile, pdata = new("NAnnotatedDataFrame", pd), mode = "onDisk")
 raw_data <<- filterRt(raw_data, c(min(rtime(raw_data)), 750))
-spled <- split(raw_data, f = fromFile(raw_data))
 
 detection <- function(detection_algo, params) {
   tryCatch(
@@ -63,11 +64,10 @@ detection <- function(detection_algo, params) {
         for (ci in 1:length(lf[[file_index]])) {
           # Check if all the peaks are solely within the given regions.
           corr_frame <- peaksf[[1]][between(peaksf[[1]][,"rtmin"], lf[[file_index]][ci] - peak_margin, uf[[file_index]][ci] + peak_margin) & between(peaksf[[1]][,"rtmax"], lf[[file_index]][ci] - peak_margin, uf[[file_index]][ci] + peak_margin),]
-          n_corr <- n_corr + (length(corr_frame) / 11) # Divided by 11, because corr_frame is an array.
-          
+          n_corr <- n_corr + (length(corr_frame) / ncol(peaksf[[1]])) # Divided by number of columns of peaksf, because corr_frame is an array.
         }
         n_corr <- n_corr - (-nrow(peaksf[[1]]) + n_corr)
-        fres <- c(fres, abs(1-length(lf[[file_index]])/(abs(n_corr)+length(lf[[file_index]]))-0.5))    
+        fres <- c(fres, abs(1-length(lf[[file_index]])/(abs(n_corr)+length(lf[[file_index]]))-0.5))  
       }
       return(as.data.frame(t(c(mean(fres), fres, params))))
     },
@@ -80,8 +80,8 @@ detection <- function(detection_algo, params) {
 start_vals <- c(93, 5, 25, 100, 1, 300, 1, 100, 1, 1000, 0)
 options(warn=-1)
 edf <- detection(1, start_vals)
-print(edf)
-for (i in 1:2) {
+for (i in 1:1000) {
+  print(i)
   minpeak <- runif(1,1.1,100)
   randvals <- c(
     runif(1, 1.1, 200), #ppm
@@ -97,15 +97,14 @@ for (i in 1:2) {
     sample(c(0,1), 1) #verbosecolumns
   )
   edf <- rbind(edf, detection(1, randvals))
-  edf <- edf[edf[,1] != 1,]
+  #edf <- edf[edf[,1] != 1,]
 }
-all_vals <- c()
 write.csv(edf, "/exports/nas/berends.p/boloa/optimize_screen_2.csv", row.names=FALSE)
 
 tries <- 0
 prev_add <- data.frame(c(2,2,3))
-while (mean(edf[,1]) >= 0.10 | tries < 1000) {
-  edf <- tail(edf, n = 1000)
+while (mean(edf[,1]) >= 0.10 | tries < 100) {
+  #edf <- tail(edf, n = 1000)
   end_vals <- c(t(colMeans(edf[,5:length(edf)])))
   end_vals <- (end_vals + c(t(edf[order(edf[,1]),][1,5:15]))) / 2
   #message("N TRIES:")
@@ -150,7 +149,6 @@ while (mean(edf[,1]) >= 0.10 | tries < 1000) {
   }
   edf <- rbind(edf, new_add)
   prev_add <- new_add
-  all_vals <- c(all_vals, new_add[,1])
   write.table(edf, file = "/exports/nas/berends.p/boloa/optimize_screen_2.csv", sep = ",", append = TRUE, quote = FALSE,
               col.names = FALSE, row.names = FALSE)
   
