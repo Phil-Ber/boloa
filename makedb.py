@@ -1,5 +1,6 @@
 #/usr/bin/env python3
 import mysql.connector
+import json
 db_host = "localhost"
 with open(".dbpw", "r") as f:
 	content = f.read().strip().split(",")
@@ -157,11 +158,41 @@ def make_sample_job():
   print("Sample job table created...")
 
 def make_peak():
-  cur.execute("DROP TABLE IF EXISTS sample_job;")
+  cur.execute("DROP TABLE IF EXISTS peak;")
   cur.exeute("CREATE TABLE peak"
     
   )
 
+def make_mol():
+  cur.execute("DROP TABLE IF EXISTS mol;")
+  cur.execute(
+    "CREATE TABLE mol ("
+    "mol_id INT AUTO_INCREMENT PRIMARY KEY, "
+    "splash VARCHAR(100), "
+    "mol_name VARCHAR(1000), "
+    "mass DOUBLE, "
+    "type VARCHAR(4)"
+    ");"  
+  )
+  print("Molecule table created... Now filling mol, please be patient...")
+  for chrom_method in ["GC", "LC"]:
+    f = open(f'annot_data/MoNA-export-{chrom_method}-MS_Spectra.json')
+    data = json.load(f)
+    f.close()
+    for i in range(len(data)):
+      splash = data[i]["splash"]["splash"]
+      try:
+          mol_name = data[i]["compound"][0]["names"][0]["name"]
+          mol_name = mol_name.replace("'", r"\'")
+      except:
+          mol_name = "Unknown Compound"
+      for md in data[i]["compound"][0]["metaData"]:
+          if md["name"] == "total exact mass":
+              mass = md["value"]
+      cur.execute(f"INSERT INTO mol (splash, mol_name, mass, type) VALUES "
+          "('{splash}', '{mol_name}', '{mass}', '{chrom_method}');")
+      mydb.commit()
+  print("Molecule table filled...")
 
 cur.execute("SET GLOBAL local_infile=1;")
 cur.execute("SET FOREIGN_KEY_CHECKS=0;")
@@ -169,9 +200,12 @@ cur.execute("SET FOREIGN_KEY_CHECKS=0;")
 # dir_path = os.path.dirname(os.path.realpath(__file__))
 # bash_remove = f"rm {dir_path}/massascans/*.mzXML"
 # os.system(bash_remove)
+
+### Comment out tables where drops are unwanted.
 # make_sample()
-make_parameter()
-make_job()
-make_processed_sample()
-make_sample_job()
+# make_parameter()
+# make_job()
+# make_processed_sample()
+# make_sample_job()
+# make_mol() # Warning: The creation and subsequent filling of this table takes a long time
 cur.execute("SET FOREIGN_KEY_CHECKS=1;")
