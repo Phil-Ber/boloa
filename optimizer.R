@@ -1,12 +1,11 @@
 suppressMessages(library(xcms))
-suppressMessages(library(plotly))
 suppressMessages(library(dplyr))
 ### This script is used to optimize the parameters for peak detection. 
 ### It takes three files as input with corresponding arrays concerning peak
 ### spread.
 ###
 
-print("Running optimization...")
+print("Running optimization... v2")
 
 set.seed(143241)
 register(bpstart(MulticoreParam(8)))
@@ -64,10 +63,11 @@ detection <- function(detection_algo, params) {
         for (ci in 1:length(lf[[file_index]])) {
           # Check if all the peaks are solely within the given regions.
           corr_frame <- peaksf[[1]][between(peaksf[[1]][,"rtmin"], lf[[file_index]][ci] - peak_margin, uf[[file_index]][ci] + peak_margin) & between(peaksf[[1]][,"rtmax"], lf[[file_index]][ci] - peak_margin, uf[[file_index]][ci] + peak_margin),]
-          n_corr <- n_corr + (length(corr_frame) / ncol(peaksf[[1]])) # Divided by number of columns of peaksf, because corr_frame is an array.
+          cor_det <- replace(length(corr_frame) / length(corr_frame), is.na(length(corr_frame) / length(corr_frame)), 1)
+          n_corr <- n_corr + cor_det # cor_det is a binary value, either 0 or 1, 1 signifies a correct region is detected.
         }
-        n_corr <- n_corr - (-nrow(peaksf[[1]]) + n_corr)
-        fres <- c(fres, abs(1-length(lf[[file_index]])/(abs(n_corr)+length(lf[[file_index]]))-0.5))  
+        n_corr <- n_corr - (-nrow(peaksf[[1]]) + n_corr)**2
+        fres <- c(fres, abs(1-length(lf[[file_index]])/(abs(n_corr)+length(lf[[file_index]]))-0.5))
       }
       return(as.data.frame(t(c(mean(fres), fres, params))))
     },
@@ -76,6 +76,7 @@ detection <- function(detection_algo, params) {
     }
   )
 }
+
 
 start_vals <- c(93, 5, 25, 100, 1, 300, 1, 100, 1, 1000, 0)
 options(warn=-1)
@@ -99,12 +100,12 @@ for (i in 1:1000) {
   edf <- rbind(edf, detection(1, randvals))
   #edf <- edf[edf[,1] != 1,]
 }
-write.csv(edf, "/exports/nas/berends.p/boloa/optimize_screen_2.csv", row.names=FALSE)
+write.csv(edf, "/exports/nas/berends.p/boloa/optimize_screen_4.csv", row.names=FALSE)
 
 tries <- 0
 prev_add <- data.frame(c(2,2,3))
 while (mean(edf[,1]) >= 0.10 | tries < 100) {
-  #edf <- tail(edf, n = 1000)
+  edf <- tail(edf, n = 1000) #For testing
   end_vals <- c(t(colMeans(edf[,5:length(edf)])))
   end_vals <- (end_vals + c(t(edf[order(edf[,1]),][1,5:15]))) / 2
   #message("N TRIES:")
@@ -149,6 +150,6 @@ while (mean(edf[,1]) >= 0.10 | tries < 100) {
   }
   edf <- rbind(edf, new_add)
   prev_add <- new_add
-  write.table(new_add, file = "/exports/nas/berends.p/boloa/optimize_screen_2.csv", sep = ",", append = TRUE, quote = FALSE,
+  write.table(new_add, file = "/exports/nas/berends.p/boloa/optimize_screen_4.csv", sep = ",", append = TRUE, quote = FALSE,
               col.names = FALSE, row.names = FALSE)
 }
