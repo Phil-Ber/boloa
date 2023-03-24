@@ -63,10 +63,10 @@ detection <- function(detection_algo, params) {
         for (ci in 1:length(lf[[file_index]])) {
           # Check if all the peaks are solely within the given regions.
           corr_frame <- peaksf[[1]][between(peaksf[[1]][,"rtmin"], lf[[file_index]][ci] - peak_margin, uf[[file_index]][ci] + peak_margin) & between(peaksf[[1]][,"rtmax"], lf[[file_index]][ci] - peak_margin, uf[[file_index]][ci] + peak_margin),]
-          cor_det <- replace(length(corr_frame) / length(corr_frame), is.na(length(corr_frame) / length(corr_frame)), 1)
+          cor_det <- replace(length(corr_frame) / length(corr_frame), is.na(length(corr_frame) / length(corr_frame)), 0)
           n_corr <- n_corr + cor_det # cor_det is a binary value, either 0 or 1, 1 signifies a correct region is detected.
         }
-        n_corr <- n_corr - (-nrow(peaksf[[1]]) + n_corr)**2
+        n_corr <- n_corr - ((-nrow(peaksf[[1]]) + n_corr)**2)
         fres <- c(fres, abs(1-length(lf[[file_index]])/(abs(n_corr)+length(lf[[file_index]]))-0.5))
       }
       return(as.data.frame(t(c(mean(fres), fres, params))))
@@ -100,7 +100,7 @@ for (i in 1:1000) {
   edf <- rbind(edf, detection(1, randvals))
   #edf <- edf[edf[,1] != 1,]
 }
-write.csv(edf, "/exports/nas/berends.p/boloa/optimize_screen_4.csv", row.names=FALSE)
+write.csv(edf, "/exports/nas/berends.p/boloa/optimize_screen_5.csv", row.names=FALSE)
 
 tries <- 0
 prev_add <- data.frame(c(2,2,3))
@@ -150,6 +150,6 @@ while (mean(edf[,1]) >= 0.10 | tries < 100) {
   }
   edf <- rbind(edf, new_add)
   prev_add <- new_add
-  write.table(new_add, file = "/exports/nas/berends.p/boloa/optimize_screen_4.csv", sep = ",", append = TRUE, quote = FALSE,
+  write.table(new_add, file = "/exports/nas/berends.p/boloa/optimize_screen_5.csv", sep = ",", append = TRUE, quote = FALSE,
               col.names = FALSE, row.names = FALSE)
 }

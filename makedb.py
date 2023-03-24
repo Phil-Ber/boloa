@@ -159,8 +159,17 @@ def make_sample_job():
 
 def make_peak():
   cur.execute("DROP TABLE IF EXISTS peak;")
-  cur.exeute("CREATE TABLE peak"
-    
+  cur.execute(
+    "CREATE TABLE peak ("
+    "peak_id INT AUTO_INCREMENT PRIMARY KEY, "
+    "sample_hash  VARCHAR(100), "
+    "job_id INT, "
+    "peak_area DOUBLE, "
+    "mol_id INT, "
+    "FOREIGN KEY (sample_hash) REFERENCES sammple(sample_hash) ON DELETE CASCADE, "
+    "FOREIGN KEY(job_id) REFERENCES job(job_id) ON DELETE CASCADE, "
+    "FOREIGN KEY(mol_id) REFERENCES mol(mol_id) ON DELETE CASCADE"
+    ");"
   )
 
 def make_mol():
@@ -171,6 +180,7 @@ def make_mol():
     "splash VARCHAR(100), "
     "mol_name VARCHAR(1000), "
     "mass DOUBLE, "
+    "pubid VARCHAR(1000), "
     "type VARCHAR(4)"
     ");"  
   )
@@ -189,9 +199,15 @@ def make_mol():
       for md in data[i]["compound"][0]["metaData"]:
           if md["name"] == "total exact mass":
               mass = md["value"]
-      cur.execute(f"INSERT INTO mol (splash, mol_name, mass, type) VALUES "
-          "('{splash}', '{mol_name}', '{mass}', '{chrom_method}');")
-      mydb.commit()
+          if "pubchem" in md["name"]:
+            pubid = md["value"]
+      try:
+        pubid
+      except:
+        pubid = "N/A"
+      cur.execute(f"INSERT INTO mol (splash, mol_name, mass, pubid, type) VALUES "
+          f"('{splash}', '{mol_name}', '{mass}', '{pubid}', '{chrom_method}');")
+      del pubid
   print("Molecule table filled...")
 
 cur.execute("SET GLOBAL local_infile=1;")
@@ -207,5 +223,7 @@ cur.execute("SET FOREIGN_KEY_CHECKS=0;")
 # make_job()
 # make_processed_sample()
 # make_sample_job()
-# make_mol() # Warning: The creation and subsequent filling of this table takes a long time
+#make_mol() # Warning: The creation and subsequent filling of this table takes a long time
+make_peak()
 cur.execute("SET FOREIGN_KEY_CHECKS=1;")
+mydb.commit()

@@ -275,32 +275,32 @@ server <- function(input, output, session) {
   nr_files <<- 0
   
   default_cent <- tagList(
-    numericInput("ppm", label = "ppm", 51.02844),
-    numericInput("min_peakwidth", label = "min_peakwidth", 3),
-    numericInput("max_peakwidth", label = "max_peakwidth", 6),
-    numericInput("snthresh", label = "snthresh", 114.84),
-    numericInput("prefilter", label = "prefilter", 1),
-    numericInput("value_of_prefilter", label = "value_of_prefilter", 85.06714),
-    selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = 4),
+    numericInput("ppm", label = "ppm", 74.77602),
+    numericInput("min_peakwidth", label = "min_peakwidth", 3.727111),
+    numericInput("max_peakwidth", label = "max_peakwidth", 29.69969),
+    numericInput("snthresh", label = "snthresh", 175.7889),
+    numericInput("prefilter", label = "prefilter", 15.51382),
+    numericInput("value_of_prefilter", label = "value_of_prefilter", 3523.923),
+    selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = 0),
     numericInput("integrate", label = "integrate", 1),
-    numericInput("mzdiff", label = "mzdiff", -0.043),
-    checkboxInput("fitgauss", label = "fitgauss", 0),
-    numericInput("noise", label = "noise", 9040),
-    checkboxInput("verboseColumns", label = "verboseColumns", 0)
+    numericInput("mzdiff", label = "mzdiff", -1.305187),
+    checkboxInput("fitgauss", label = "fitgauss", 1),
+    numericInput("noise", label = "noise", 102536.0),
+    checkboxInput("verboseColumns", label = "verboseColumns", 1)
   )
   default_massif <- tagList(
-    numericInput("ppm", label = "ppm", 93.07),
-    numericInput("min_peakwidth", label = "min_peakwidth", 5),
-    numericInput("max_peakwidth", label = "max_peakwidth", 30),
-    numericInput("snthresh", label = "snthresh", 10),
-    numericInput("prefilter", label = "prefilter", 2),
-    numericInput("value_of_prefilter", label = "value_of_prefilter", 328.63),
-    selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4)),
+    numericInput("ppm", label = "ppm", 74.77602),
+    numericInput("min_peakwidth", label = "min_peakwidth", 3.727111),
+    numericInput("max_peakwidth", label = "max_peakwidth", 29.69969),
+    numericInput("snthresh", label = "snthresh", 175.7889),
+    numericInput("prefilter", label = "prefilter", 15.51382),
+    numericInput("value_of_prefilter", label = "value_of_prefilter", 3523.923),
+    selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = 0),
     numericInput("integrate", label = "integrate", 1),
-    numericInput("mzdiff", label = "mzdiff", 0.01),
-    checkboxInput("fitgauss", label = "fitgauss", 0),
-    numericInput("noise", label = "noise", 0),
-    checkboxInput("verboseColumns", label = "verboseColumns", 0),
+    numericInput("mzdiff", label = "mzdiff", -1.305187),
+    checkboxInput("fitgauss", label = "fitgauss", 1),
+    numericInput("noise", label = "noise", 102536.0),
+    checkboxInput("verboseColumns", label = "verboseColumns", 1),
     numericInput("criticalValue", label = "criticalValue", 1.125),
     numericInput("consecMissedLimit", label = "consecMissedLimit", 2),
     numericInput("unions", label = "unions", 1),
@@ -1782,26 +1782,47 @@ server <- function(input, output, session) {
         if (job_plan %in% c(2,3,4,5,6) | job_plan == 7){
           jstep <- 9
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '9/9 Annotating peaks...' WHERE job_id = ", job_id, ";", sep = "")))
-          # intmzs <- intensity(xset)
-          # intmzs <- split(intmzs, f = fromFile(xset))
-          # mzs <- mz(xset)
-          # mzs <-split(mzs, f = fromFile(xset))
-          # #intmzs[[1]]$F1.S0106
-          # peaknr <- 1
-          # chrom_peakids <- featureDefinitions(xset)[[peaknr,"peakidx"]]
-          # chrompeaks_values <- chromPeaks(xset)[chrom_peakids,]
-          
-          
           annot_spectra <- featureSpectra(xset, msLevel = 1, return.type = "Spectra", skipFilled = FALSE)
           save(annot_spectra, file = paste(dir, "/", job_id, "_annot.rda", sep = ""))
+          def_params$sample_type <- c("LC", "GC")[as.integer(def_params$sample_type)]
+          # Loop through all the indexes of filenames used in the job.
+          for (i in 1:length(files)) {
+            # Store information about the detected peaks
+            tt <- spectraData(annot_spectra)
+            # Split the xset into a single file.
+            aa <- filterFile(xset, i)
+            tp <- rownames(chromPeaks(aa))
+            # Take various columns from the tt variable.
+            p <- unique(tt[tt[, "peak_id"] %in% tp, c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
+            # Loop through each peak detected in a single file in order to retrieve information
+            for (peak in 1:length(tp)) {
+              # Retrieve information about a single peak
+              p <- unique(tt[tt[, "peak_id"] == tp[peak], c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
+              apex <- p[order(p[,"totIonCurrent"], decreasing = TRUE ),][1,] #Scan number of peak apex
+              apexspectra <- peaksData(annot_spectra[apex[,"scanIndex"]])[[1]]
+              splash <- getSplash(apexspectra) #Splash generated from peak apex
+              area <- chromPeaks(aa)[peak,"into"] #Area under peak
+              search_splash <- paste(strsplit(splash , split = "-")[[1]][1:3], collapse='-')
+              mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", def_params$sample_type, "' AND (splash LIKE '%", search_splash, "%');", sep = ""))
+              mol_annot <- get_query(mol_annot)
+              # Calculate the relative mass
+              rel_mass <- sum(apexspectra[,1]*apexspectra[,2])/sum(apexspectra[,2])
+              if (nrow(mol_annot) == 0) {
+                mol_id <- NA
+              } else {
+                print(rel_mass)
+                print(mol_annot)  
+              }
+            }
+          }
         }
         if (job_plan == 7) {
+          # Job finished
           todf <- data.frame(
             job_id = toString(job_id),
             file_path_rda = toString(paste(dir, "/", job_id, ".rda", sep = "")),
             file_path_peaks = toString(paste(dir, "/", job_id, "_annot.rda", sep = ""))
           )
-          # length(chromPeaks(xset)[,chromPeaks(xset)[,"sample"] == 1])
           insert_query("processed_sample", todf)
         }
         end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
