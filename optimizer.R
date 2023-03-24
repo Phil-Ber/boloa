@@ -66,7 +66,7 @@ detection <- function(detection_algo, params) {
           cor_det <- replace(length(corr_frame) / length(corr_frame), is.na(length(corr_frame) / length(corr_frame)), 0)
           n_corr <- n_corr + cor_det # cor_det is a binary value, either 0 or 1, 1 signifies a correct region is detected.
         }
-        n_corr <- n_corr - ((-nrow(peaksf[[1]]) + n_corr)**2)
+        n_corr <- n_corr - (-nrow(peaksf[[1]]) + n_corr)*2
         fres <- c(fres, abs(1-length(lf[[file_index]])/(abs(n_corr)+length(lf[[file_index]]))-0.5))
       }
       return(as.data.frame(t(c(mean(fres), fres, params))))
