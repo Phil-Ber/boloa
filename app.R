@@ -1782,9 +1782,11 @@ server <- function(input, output, session) {
         if (job_plan %in% c(2,3,4,5,6) | job_plan == 7){
           jstep <- 9
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '9/9 Annotating peaks...' WHERE job_id = ", job_id, ";", sep = "")))
+          # Remove previous annotation for same job, necessary for reruns.
+          send_query(stringr::str_glue(paste("DELETE FROM peak WHERE job_id = ", job_id, ";", sep = "")))
           annot_spectra <- featureSpectra(xset, msLevel = 1, return.type = "Spectra", skipFilled = FALSE)
           save(annot_spectra, file = paste(dir, "/", job_id, "_annot.rda", sep = ""))
-          def_params$sample_type <- c("LC", "GC")[as.integer(def_params$sample_type)]
+          chromtype <- c("LC", "GC")[as.integer(def_params$sample_type)]
           # Loop through all the indexes of filenames used in the job.
           for (i in 1:length(files)) {
             # Store information about the detected peaks
@@ -1801,23 +1803,57 @@ server <- function(input, output, session) {
               apex <- p[order(p[,"totIonCurrent"], decreasing = TRUE ),][1,] #Scan number of peak apex
               apexspectra <- peaksData(annot_spectra[apex[,"scanIndex"]])[[1]]
               splash <- getSplash(apexspectra) #Splash generated from peak apex
-              area <- chromPeaks(aa)[peak,"into"] #Area under peak
               search_splash <- paste(strsplit(splash , split = "-")[[1]][1:3], collapse='-')
-              mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", def_params$sample_type, "' AND (splash LIKE '%", search_splash, "%');", sep = ""))
-              mol_annot <- get_query(mol_annot)
+              # calculate the pearson correlation between mz and intensity
+              corr <- cor(apexspectra[,2], apexspectra[,1], method = 'pearson')
               # Calculate the relative mass
               rel_mass <- sum(apexspectra[,1]*apexspectra[,2])/sum(apexspectra[,2])
+              # # Search on splash components 2 and 3
+              # mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND (splash LIKE '%", search_splash, "%');", sep = ""))
+              # mol_annot <- get_query(mol_annot)
+              mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "';", sep = ""))
+              mol_annot <- get_query(mol_annot)
+              # If no matching compounds are available in the database, annotation is not possible
               if (nrow(mol_annot) == 0) {
-                mol_id <- NA
+                mol_id <- "NULL"
+                corr_diff <- "NULL"
               } else {
-                print(rel_mass)
-                print(mol_annot)  
+                # Calculate the difference between correlation of peak and matched compounds in database
+                print("calculating difference")
+                mol_annot$diff <- abs((corr - mol_annot$corr)/mol_annot$corr)
+                best_match <- mol_annot[order(mol_annot$diff),][1,]
+                if (best_match$diff > 0.05) {
+                  print("TOO HIGH")
+                  mol_id <- "NULL"
+                  corr_diff <- "NULL"
+                }
+                else {
+                  mol_id <- best_match$mol_id
+                  corr_diff <- best_match$diff
+                }
               }
+              chromaa <- as.data.frame(chromPeaks(aa))
+              area <- chromaa[peak,"into"] #Area under peak
+              send_query(stringr::str_glue(paste("INSERT INTO peak VALUES (",
+                                                 job_id, ", '",
+                                                 tp[peak], "', '",
+                                                 massfiles$sample_hash[i], "', ",
+                                                 area, ", ",
+                                                 mol_id, ", ",
+                                                 corr_diff, ", ",
+                                                 chromaa[peak,"mz"], ", ",
+                                                 chromaa[peak,"mzmin"], ", ",
+                                                 chromaa[peak,"mzmax"], ", ",
+                                                 chromaa[peak,"rt"], ", ",
+                                                 chromaa[peak,"rtmin"], ", ",
+                                                 chromaa[peak,"rtmax"], ", ",
+                                                 chromaa[peak,"maxo"],
+                                                 ");", sep = "")))
             }
           }
         }
         if (job_plan == 7) {
-          # Job finished
+          # Job finished for the first time
           todf <- data.frame(
             job_id = toString(job_id),
             file_path_rda = toString(paste(dir, "/", job_id, ".rda", sep = "")),

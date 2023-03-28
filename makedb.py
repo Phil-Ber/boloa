@@ -1,6 +1,7 @@
 #/usr/bin/env python3
 import mysql.connector
 import json
+import numpy as np
 db_host = "localhost"
 with open(".dbpw", "r") as f:
 	content = f.read().strip().split(",")
@@ -161,16 +162,26 @@ def make_peak():
   cur.execute("DROP TABLE IF EXISTS peak;")
   cur.execute(
     "CREATE TABLE peak ("
-    "peak_id INT AUTO_INCREMENT PRIMARY KEY, "
-    "sample_hash  VARCHAR(100), "
     "job_id INT, "
+    "peak_id VARCHAR(100), "
+    "sample_hash  VARCHAR(100), "
     "peak_area DOUBLE, "
     "mol_id INT, "
-    "FOREIGN KEY (sample_hash) REFERENCES sammple(sample_hash) ON DELETE CASCADE, "
+    "corr_diff DOUBLE, "
+    "mz DOUBLE, "
+    "mzmin DOUBLE, "
+    "mzmax DOUBLE, "
+    "rt DOUBLE, "
+    "rtmin DOUBLE, "
+    "rtmax DOUBLE, "
+    "maxo DOUBLE, "
+    "PRIMARY KEY(job_id, peak_id, sample_hash), "
+    "FOREIGN KEY (sample_hash) REFERENCES sample(sample_hash) ON DELETE CASCADE, "
     "FOREIGN KEY(job_id) REFERENCES job(job_id) ON DELETE CASCADE, "
     "FOREIGN KEY(mol_id) REFERENCES mol(mol_id) ON DELETE CASCADE"
     ");"
   )
+  print("Peak table created...")
 
 def make_mol():
   cur.execute("DROP TABLE IF EXISTS mol;")
@@ -181,10 +192,12 @@ def make_mol():
     "mol_name VARCHAR(1000), "
     "mass DOUBLE, "
     "pubid VARCHAR(1000), "
-    "type VARCHAR(4)"
+    "type VARCHAR(4), "
+    "corr DOUBLE"
     ");"  
   )
   print("Molecule table created... Now filling mol, please be patient...")
+  # VOEG COR TUSSEN MASSA EN INTENSITEIT TOE
   for chrom_method in ["GC", "LC"]:
     f = open(f'annot_data/MoNA-export-{chrom_method}-MS_Spectra.json')
     data = json.load(f)
@@ -205,8 +218,17 @@ def make_mol():
         pubid
       except:
         pubid = "N/A"
-      cur.execute(f"INSERT INTO mol (splash, mol_name, mass, pubid, type) VALUES "
-          f"('{splash}', '{mol_name}', '{mass}', '{pubid}', '{chrom_method}');")
+      # Spectra correlations
+      s = data[i]["spectrum"]
+      s = s.split(" ")
+      s = [bn.split(':') for bn in s]
+      masses = [float(ms[0]) for ms in s]
+      intensities = [float(intens[1]) for intens in s]
+      corr = float(np.corrcoef(masses, intensities)[0,1])
+      if str(corr) == 'nan':
+        corr = 0.0
+      cur.execute(f"INSERT INTO mol (splash, mol_name, mass, pubid, type, corr) VALUES "
+          f"('{splash}', '{mol_name}', '{mass}', '{pubid}', '{chrom_method}', '{corr}');")
       del pubid
   print("Molecule table filled...")
 
