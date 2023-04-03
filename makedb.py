@@ -2,6 +2,8 @@
 import mysql.connector
 import json
 import numpy as np
+import subprocess
+import os
 db_host = "localhost"
 with open(".dbpw", "r") as f:
 	content = f.read().strip().split(",")
@@ -166,19 +168,24 @@ def make_peak():
     "peak_id VARCHAR(100), "
     "sample_hash  VARCHAR(100), "
     "peak_area DOUBLE, "
-    "mol_id INT, "
-    "corr_diff DOUBLE, "
+    "mol_id_coeffsim INT, "
+    "mol_id_modcosinesim INT, "
+    "modcosinesim DOUBLE, "
+    "coeff_diff DOUBLE, "
+    "coeff DOUBLE, "
     "mz DOUBLE, "
     "mzmin DOUBLE, "
     "mzmax DOUBLE, "
     "rt DOUBLE, "
     "rtmin DOUBLE, "
     "rtmax DOUBLE, "
-    "maxo DOUBLE, "
+    "apex_tic DOUBLE, "
+    "splash VARCHAR(100), "
     "PRIMARY KEY(job_id, peak_id, sample_hash), "
     "FOREIGN KEY (sample_hash) REFERENCES sample(sample_hash) ON DELETE CASCADE, "
     "FOREIGN KEY(job_id) REFERENCES job(job_id) ON DELETE CASCADE, "
-    "FOREIGN KEY(mol_id) REFERENCES mol(mol_id) ON DELETE CASCADE"
+    "FOREIGN KEY(mol_id_coeffsim) REFERENCES mol(mol_id) ON DELETE CASCADE, "
+    "FOREIGN KEY(mol_id_modcosinesim) REFERENCES mol(mol_id) ON DELETE CASCADE"
     ");"
   )
   print("Peak table created...")
@@ -193,7 +200,8 @@ def make_mol():
     "mass DOUBLE, "
     "pubid VARCHAR(1000), "
     "type VARCHAR(4), "
-    "corr DOUBLE"
+    "coeff DOUBLE, "
+    "spectrum MEDIUMTEXT"
     ");"  
   )
   print("Molecule table created... Now filling mol, please be patient...")
@@ -219,22 +227,31 @@ def make_mol():
       except:
         pubid = "N/A"
       # Spectra correlations
-      s = data[i]["spectrum"]
-      s = s.split(" ")
+      spectrum = data[i]["spectrum"]
+      # # Create a temporary file to store spectrum contents
+      # tmpfile = open("dbtmp", "w")
+      # tmpfile.write(spectrum)
+      # tmpfile.close()
+      # result = subprocess.run(['Rscript', 'coeffcalc.R'], stdout=subprocess.PIPE)
+      # coeff = result.stdout.decode('utf-8').split("\n")[2]
+      s = spectrum.split(" ")
       s = [bn.split(':') for bn in s]
-      masses = [float(ms[0]) for ms in s]
-      intensities = [float(intens[1]) for intens in s]
-      corr = float(np.corrcoef(masses, intensities)[0,1])
-      if str(corr) == 'nan':
-        corr = 0.0
-      cur.execute(f"INSERT INTO mol (splash, mol_name, mass, pubid, type, corr) VALUES "
-          f"('{splash}', '{mol_name}', '{mass}', '{pubid}', '{chrom_method}', '{corr}');")
+      x = np.array([float(ms[0]) for ms in s])
+      y = np.array([float(intens[1]) for intens in s])
+      coeff = np.dot(x, y)/(np.linalg.norm(x) * np.linalg.norm(y))
+      if coeff == "NA":
+        coeff = 0
+      # corr = float(np.corrcoef(masses, intensities)[0,1])
+      # if str(corr) == 'nan':
+      #   corr = 0.0
+      cur.execute(f"INSERT INTO mol (splash, mol_name, mass, pubid, type, coeff, spectrum) VALUES "
+          f"('{splash}', '{mol_name}', '{mass}', '{pubid}', '{chrom_method}', '{coeff}', '{spectrum}');")
       del pubid
+      #os.remove("dbtmp")
   print("Molecule table filled...")
 
 cur.execute("SET GLOBAL local_infile=1;")
 cur.execute("SET FOREIGN_KEY_CHECKS=0;")
-# import os
 # dir_path = os.path.dirname(os.path.realpath(__file__))
 # bash_remove = f"rm {dir_path}/massascans/*.mzXML"
 # os.system(bash_remove)
@@ -245,7 +262,7 @@ cur.execute("SET FOREIGN_KEY_CHECKS=0;")
 # make_job()
 # make_processed_sample()
 # make_sample_job()
-#make_mol() # Warning: The creation and subsequent filling of this table takes a long time
+# make_mol() # Warning: The creation and subsequent filling of this table takes a long time
 make_peak()
 cur.execute("SET FOREIGN_KEY_CHECKS=1;")
 mydb.commit()
