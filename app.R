@@ -1,4 +1,4 @@
-#!/bin/Rscript
+#!/usr/bin/env Rscript
 
 load('.hidden.RData')
 
@@ -973,6 +973,8 @@ server <- function(input, output, session) {
 	    names(params) <- used_param_names
 	    params <- c(params, job_id=job_id)
 	    params <- as.data.frame(t(params))
+	    query <- stringr::str_glue(paste("SELECT * FROM parameter WHERE job_id = ", job_id, ";", sep = ""))
+	    params <- get_query(query)
 	    future({xcms_data_processing(jobfiles, params, 0, job_id, db_usr, db_pwd, job_plan)}, seed = NULL)
 	    #xcms_data_processing(jobfiles, params, 0, job_id, db_usr, db_pwd, job_plan)
 	    session$reload()
@@ -999,6 +1001,23 @@ server <- function(input, output, session) {
 	  query4 <- stringr::str_glue(paste("SELECT * FROM sample WHERE sample_hash IN (SELECT sample_hash FROM sample_job WHERE job_id = ", job_id, ");", sep = ""))
 	  selection <- get_query(query4)
 	  
+	  query5 <- stringr::str_glue(paste("SELECT peak.peak_id, peak.modcosinesim, mol.mol_name, mol.pubid FROM peak LEFT JOIN mol ON peak.mol_id_modcosinesim = mol.mol_id WHERE job_id = ",
+	                                   job_id, ";", sep = ""))
+	  detected_mols_cos <- get_query(query5)
+	  query6 <- stringr::str_glue(paste("SELECT peak.peak_id, peak.coeff_diff, mol.mol_name, mol.pubid FROM peak LEFT JOIN mol ON peak.mol_id_coeffsim = mol.mol_id WHERE job_id = ",
+	                                    job_id, ";", sep = ""))
+	  detected_mols_coeff <- get_query(query6)
+	  
+	  detected_mols_cos <-detected_mols_cos[order(detected_mols_cos$peak_id),]
+	  detected_mols_coeff <-detected_mols_coeff[order(detected_mols_coeff$peak_id),]
+	  dfpeaks <- as.data.frame(chromPeaks(xset))
+	  dfpeaks <- dfpeaks[order(rownames(dfpeaks)),]
+	  dfpeaks[rownames(dfpeaks) %in% detected_mols_cos$peak_id,"mol_name_cosd"] <- detected_mols_cos$mol_name
+	  dfpeaks[rownames(dfpeaks) %in% detected_mols_cos$peak_id,"pubid_cosd"] <- detected_mols_cos$pubid
+	  dfpeaks[rownames(dfpeaks) %in% detected_mols_cos$peak_id,"cossim"] <- detected_mols_cos$modcosinesim
+	  dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"mol_name_coeff"] <- detected_mols_coeff$mol_name
+	  dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"pubid_coeff"] <- detected_mols_coeff$pubid
+	  dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"coeff_diff"] <- detected_mols_coeff$coeff_diff
 	  observeEvent(input$Peak_methodA, ignoreInit =  T, {
 	    peak_options <- c(default_cent, default_massif, default_matchedfilter)[is.na(input$Peak_methodA) + 1]
 	  })
@@ -1261,8 +1280,23 @@ server <- function(input, output, session) {
 	      )
 	    }
 	  }
-
-	  
+	  ### Code necessary in order to create a stacked bar plot of all detected compounds
+	  stacked_samps <- data.frame(compound = character(0), sample = numeric(0), area = numeric(0))
+	  for (sample in 1:length(unique(chromPeaks(xset)[,"sample"]))) {
+	    comp <- dfpeaks[dfpeaks[,"sample"] == sample,]
+	    for (row in 1:nrow(comp)){
+	      mol_name <- comp[row,"mol_name_cosd"]
+	      if (mol_name == '' | is.na(mol_name) == TRUE){
+	        mol_name <- "Unknown Compound"
+	      }
+	      newrow <- data.frame(mol_name, sample, comp[row, "into"])
+	      names(newrow) <- c("compound", "sample", "area")
+	      stacked_samps <- rbind(stacked_samps, newrow)
+	    }
+	  }
+	  # stacked_compounds <- plot_ly(stacked_samps, x = ~compound, y = ~area, type = 'bar', name = 'sample 1')
+	  # stacked_compounds <- fig %>% add_trace(y = ~LA_Zoo, name = 'LA Zoo')
+	  # stacked_compounds <- fig %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
 	  analysisTL <- renderUI(tagList(
 	    h4(paste("Output of job", job_id, ":\n", job_table_content[input$jobs_rows_selected, ]$job_name)),
         fluidRow(style='max-width:100%;padding:10px;',
@@ -1272,10 +1306,7 @@ server <- function(input, output, session) {
   			         ),
   			fluidRow(style='max-width:100%;padding:10px;',
   			         column(6,
-  			                div(DT::renderDataTable({
-  			                  DT::datatable(used_parameters, selection = 'none',
-  			                                rownames= FALSE, options = list(scrollX = TRUE, autoWidth = TRUE, dom = 't'))
-  			                }, server = FALSE))#, style = "font-size: 75%; width: 25%")
+  			                renderPlot({ggplot(stacked_samps, aes(fill = as.character(stacked_samps$sample), y = log10(stacked_samps$area), x = stacked_samps$compound)) + geom_bar(position = "stack", stat="identity") + ggtitle("Plot of length \n by dose")})
   			         ),
   			         column(6,
   			                div(DT::renderDataTable({
@@ -1311,37 +1342,18 @@ server <- function(input, output, session) {
   			                    aa <- filterFile(xset, i)
   			                    #Get ids of peaks in sample
   			                    tp <- rownames(chromPeaks(aa))
-  			                    
-  			                    #Get scanids for peaks in sample
-  			                    # p <- unique(tt[tt[, "peak_id"] %in% tp, c("scanIndex", "rtime", "totIonCurrent")])
-  			                    # y <- tic(aa)
-  			                    # x <- rtime(aa)
-  			                    # xp <- p[,"rtime"]
-  			                    # yp <- p[,"totIonCurrent"]
-  			                    # peak <- x %in% xp
   			                    for (peak in 1:length(tp)) {
   			                      p <- unique(tt[tt[, "peak_id"] == tp[peak], c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
   			                      xp <- p[,"rtime"]
   			                      yp <- p[,"totIonCurrent"]
-  			                      chrom <- chrom %>% add_lines(x = xp, y = yp, name = paste(selection$original_file_name[i], "| peak", peak), fill = 'tozeroy')
+  			                      label1 <- dfpeaks[tp[peak], "mol_name_cosd"]
+  			                      label2 <- dfpeaks[tp[peak], "mol_name_coeff"]
+  			                      chrom <- chrom %>% add_lines(x = xp, y = yp, name = paste("peak", peak, "| cosd: ", label1, "| coeffd:", label2), fill = 'tozeroy')
   			                    }
   			                    y <- tic(aa)
   			                    x <- rtime(aa)
-  			                    chrom <- chrom %>% add_lines(x = x, y = y, name = paste(selection$original_file_name[i], "|", selection$metadata[i]))
+  			                    chrom <- chrom %>% add_lines(x = x, y = y, name = paste(selection$original_file_name[i], "|", selection$metadata[i]), hoverinfo = 'skip')
   			                  }
-  			                  # y <- tic(featspec)
-  			                  # x <- rtime(featspec)
-  			                  # x <- featureDefinitions(xset)[,"rtmed"]
-  			                  # y <- featureDefinitions(xset)[,"mzmed"]
-  			                  
-  			                  
-  			                  # for (i in 1:length(xset)) {
-  			                  #   print(i)
-  			                  # #   print(length(xset))
-  			                  #   y <- tic(xset)
-  			                  #   x <- rtime(xset)
-  			                  #   chrom <- chrom %>% add_trace(y = y, x = x, name = 'peak', mode = 'markers')
-  			                  # # }
   			                  chrom
   			                })
   			         )
@@ -1362,6 +1374,24 @@ server <- function(input, output, session) {
   			                uiOutput("analysisHeatmap")
   			         )
   			),
+  	    fluidRow(style='max-width:100%;padding:10px;',
+  	             column(6,
+  	                    p("Detected peak specifics:"),
+  	                    div(DT::renderDataTable({
+  	                      DT::datatable(dfpeaks, extensions = "Buttons", selection = 'none',
+  	                                    rownames= TRUE, options = list(scrollX = TRUE, autoWidth = TRUE, dom = 'Bfrtip',
+  	                                                                   buttons = c('csv')))
+  	                    }, server = FALSE), style = "font-size: 75%;")
+  	             ),
+  	             column(6,
+  	                    p("Detected features:"),
+  	                    div(DT::renderDataTable({
+  	                      DT::datatable(as.data.frame(featureDefinitions(xset)), extensions = "Buttons", selection = 'none',
+  	                                    rownames= TRUE, options = list(scrollX = TRUE, autoWidth = TRUE, dom = 'Bfrtip',
+  	                                                                   buttons = c('csv')))
+  	                    }, server = FALSE), style = "font-size: 75%;")
+  	             )
+  	    ),
   	    fluidRow(style='max-width:100%;padding:10px;',
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	             ),
@@ -1798,57 +1828,107 @@ server <- function(input, output, session) {
             p <- unique(tt[tt[, "peak_id"] %in% tp, c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
             # Loop through each peak detected in a single file in order to retrieve information
             for (peak in 1:length(tp)) {
+              print(peak)
               # Retrieve information about a single peak
               p <- unique(tt[tt[, "peak_id"] == tp[peak], c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
-              apex <- p[order(p[,"totIonCurrent"], decreasing = TRUE ),][1,] #Scan number of peak apex
-              apexspectra <- peaksData(annot_spectra[apex[,"scanIndex"]])[[1]]
-              splash <- getSplash(apexspectra) #Splash generated from peak apex
-              search_splash <- paste(strsplit(splash , split = "-")[[1]][1:3], collapse='-')
-              # calculate the pearson correlation between mz and intensity
-              corr <- cor(apexspectra[,2], apexspectra[,1], method = 'pearson')
-              # Calculate the relative mass
-              rel_mass <- sum(apexspectra[,1]*apexspectra[,2])/sum(apexspectra[,2])
-              # # Search on splash components 2 and 3
-              # mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND (splash LIKE '%", search_splash, "%');", sep = ""))
-              # mol_annot <- get_query(mol_annot)
-              mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "';", sep = ""))
-              mol_annot <- get_query(mol_annot)
-              # If no matching compounds are available in the database, annotation is not possible
-              if (nrow(mol_annot) == 0) {
-                mol_id <- "NULL"
-                corr_diff <- "NULL"
-              } else {
-                # Calculate the difference between correlation of peak and matched compounds in database
-                print("calculating difference")
-                mol_annot$diff <- abs((corr - mol_annot$corr)/mol_annot$corr)
-                best_match <- mol_annot[order(mol_annot$diff),][1,]
-                if (best_match$diff > 0.05) {
-                  print("TOO HIGH")
-                  mol_id <- "NULL"
-                  corr_diff <- "NULL"
+              if (nrow(p) >= 1) {
+                apex <- p[order(p[,"totIonCurrent"], decreasing = TRUE ),][1,] #Scan number of peak apex
+                apexspectra <- peaksData(annot_spectra[apex[,"scanIndex"]])[[1]]
+                splash <- getSplash(apexspectra) #Splash generated from peak apex
+                search_splash <- paste(strsplit(splash , split = "-")[[1]][1:3], collapse='-')
+                # calculate the pearson correlation between mz and intensity
+                #corr <- cor(apexspectra[,2], apexspectra[,1], method = 'pearson')
+                # Create a linear model. This corrects for mz and rt.
+                v1 <- apexspectra[,1]
+                v2 <- apexspectra[,2]
+                coeff <- sum(v1 * v2)/sqrt(sum(v1^2)*sum(v2^2))
+                #coeff <- t$coeff[[1]] * t$coeff[2][[1]]
+                # Calculate range limits for confidence intervals
+                corr_UL_range <- 0.05 #Edit this value for a preferred limit
+                max_diff <- coeff * corr_UL_range
+                # Calculate the relative mass DEPRECATED
+                rel_mass <- sum(apexspectra[,1]*apexspectra[,2])/sum(apexspectra[,2])
+                
+                # Splash filtering and modified cosine similarity classification: METHOD 1
+                mol_annot_splash <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND (splash LIKE '%", search_splash, "%');", sep = ""))
+                mol_annot_splash <- get_query(mol_annot_splash)
+                if (nrow(mol_annot_splash) == 0) {
+                  highest_cosim_mol <- "NULL"
+                  highest_cosim <- "NULL"
+                } else {
+                  # Interate through all matched compounds
+                  scan1 <- apexspectra
+                  for (mspectr in 1:length(mol_annot_splash)) {
+                    scan2 <- mol_annot_splash$spectrum[mspectr]
+                    # Split the scan2 string into mz and intensity values
+                    bins <- strsplit(scan2, " ")
+                    ints <- c()
+                    mzs <- c()
+                    for (section in bins[[1]]){
+                      mzs <- c(mzs, as.double(strsplit(section, ":")[[1]][1]))
+                      ints <- c(ints, as.double(strsplit(section, ":")[[1]][2]))
+                    }
+                    scan2 <- data.frame(mzs, ints)
+                    minlength <- min(nrow(scan1), nrow(scan2))
+                    x <- scan1[1:minlength,1] * scan1[1:minlength,2]
+                    y <- scan2[1:minlength,1] * scan2[1:minlength,2]
+                    # Calculate the cosine similarity between peak and compound
+                    sim <- sum(x * y)/sqrt(sum(x^2)*sum(y^2))
+                    mol_annot_splash[mspectr,"sim"] <- sim
+                  }
+                  highest_cosim <- mol_annot_splash[order(mol_annot_splash$sim, decreasing = TRUE),][1,]
+                  highest_cosim_mol <- highest_cosim$mol_id
+                  highest_cosim <- highest_cosim$sim
+                  print(highest_cosim)
+                }
+                
+                # Coeff similarity search METHOD: 2
+                if (coeff >= 0) {
+                  mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND coeff < ", sub("−", "-", paste(coeff + max_diff)), " AND coeff > ", sub("−", "-", paste(coeff - max_diff)), ";", sep = ""))
+                  mol_annot <- get_query(mol_annot)
                 }
                 else {
-                  mol_id <- best_match$mol_id
-                  corr_diff <- best_match$diff
+                  mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND coeff < ", sub("−", "-", paste(coeff - max_diff)), " AND coeff > ", sub("−", "-", paste(coeff + max_diff)), ";", sep = ""))
+                  mol_annot <- get_query(mol_annot)
                 }
+                # If no matching compounds are available in the database, annotation is not possible
+                if (nrow(mol_annot) == 0) {
+                  mol_id_coeffsim <- "NULL"
+                  coeff_diff <- "NULL"
+                } else {
+                  # Calculate the difference between correlation of peak and matched compounds in database
+                  mol_annot$diff <- abs((coeff - mol_annot$coeff)/mol_annot$coeff)
+                  best_match <- mol_annot[order(mol_annot$diff),][1,]
+                  if (best_match$diff > corr_UL_range) { # Outdated
+                    mol_id_coeffsim <- "NULL"
+                    coeff_diff <- "NULL"
+                  }
+                  else {
+                    mol_id_coeffsim <- best_match$mol_id
+                    coeff_diff <- best_match$diff
+                  }
+                }
+                chromaa <- as.data.frame(chromPeaks(aa))
+                send_query(stringr::str_glue(paste("INSERT INTO peak VALUES (",
+                                                   job_id, ", '", #job_id
+                                                   tp[peak], "', '", #peak_id
+                                                   massfiles$sample_hash[i], "', ", #sample_hash
+                                                   sum(p[,"totIonCurrent"]), ", ", #peak_area
+                                                   mol_id_coeffsim, ", ", #mol_id_coeffsim
+                                                   highest_cosim_mol, ", ", #mol_id_modcosinesim
+                                                   highest_cosim, ", ", #modcosinesim
+                                                   coeff_diff, ", ", #coeff_diff
+                                                   coeff, ", ", #coeff
+                                                   chromaa[peak,"mz"], ", ", #mz
+                                                   chromaa[peak,"mzmin"], ", ", #mzmin
+                                                   chromaa[peak,"mzmax"], ", ", #mzmax
+                                                   chromaa[peak,"rt"], ", ", #rt
+                                                   chromaa[peak,"rtmin"], ", ", #rtmin
+                                                   chromaa[peak,"rtmax"], ", ", #rtmax
+                                                   apex[,"totIonCurrent"], ", '", #apex_tic
+                                                   splash, "'", #splash key
+                                                   ");", sep = "")))
               }
-              chromaa <- as.data.frame(chromPeaks(aa))
-              area <- chromaa[peak,"into"] #Area under peak
-              send_query(stringr::str_glue(paste("INSERT INTO peak VALUES (",
-                                                 job_id, ", '",
-                                                 tp[peak], "', '",
-                                                 massfiles$sample_hash[i], "', ",
-                                                 area, ", ",
-                                                 mol_id, ", ",
-                                                 corr_diff, ", ",
-                                                 chromaa[peak,"mz"], ", ",
-                                                 chromaa[peak,"mzmin"], ", ",
-                                                 chromaa[peak,"mzmax"], ", ",
-                                                 chromaa[peak,"rt"], ", ",
-                                                 chromaa[peak,"rtmin"], ", ",
-                                                 chromaa[peak,"rtmax"], ", ",
-                                                 chromaa[peak,"maxo"],
-                                                 ");", sep = "")))
             }
           }
         }
