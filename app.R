@@ -25,6 +25,7 @@ library(waiter)
 library(Spectra)
 #library(deldir)
 #library(xcms)
+library(heatmaply)
 
 #if (!require("BiocManager", quietly = TRUE))
 #BiocManager::install("OptiLCMS")
@@ -167,7 +168,7 @@ ui <- fillPage(
 					),
 					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
 						h5("1. Detection"),
-						selectInput("Peak_method", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2)),
+						selectInput("Peak_method", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2, "relsqdiff" = 3)),
 						uiOutput("peak_parameters")
 					),
 					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
@@ -204,67 +205,6 @@ ui <- fillPage(
 			),
 			tabPanel("Analysis",  icon = icon("arrow-right"), style='width:100vw;height:90vh;overflow-y: scroll;', value = "p4",
 			         uiOutput("job_analysis")
-  			# fluidRow(style='max-width:100%;padding:10px;',
-  			#          column(12,
-  			#                 uiOutput("jobInformation")
-  			#                 )
-  			#          ),
-  			# fluidRow(style='max-width:100%;padding:10px;',
-  			#          column(6,
-  			#                 div(DT::dataTableOutput("analysisParams"))#, style = "font-size: 75%; width: 25%")
-  			#          ),
-  			#          column(6,
-  			#                 div(DT::dataTableOutput("analysisSamples"))#, style = "font-size: 75%; width: 50%")
-  			#                 
-  			#          )
-  			# ),
-  			# fluidRow(style='max-width:100%;padding:10px;',
-  			#          column(6,
-  			#                 plotOutput("analysisPCA")
-  			#          ),
-  			#          column(6,
-  			#                 plotlyOutput("analysisPeaksTIC")
-  			#          )
-  			# ),
-  			# fluidRow(style='max-width:100%;padding:10px;',
-  			#          column(6,
-  			#                 uiOutput("analysisCompounds")
-  			#          ),
-  			#          column(6,
-  			#                 uiOutput("analysisDifferential")
-  			#          )
-  			# ),
-  			# fluidRow(style='max-width:100%;padding:10px;',
-  			#          column(6,
-  			#                 uiOutput("analysisVenn")
-  			#          ),
-  			#          column(6,
-  			#                 uiOutput("analysisHeatmap")
-  			#          )
-  			# )#,
-  			# fluidRow(style='max-width:100%;padding:10px;',
-  			#   column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
-  			#          h5("1. Detection"),
-  			#          uiOutput("used_peak_parameters")
-  			#   ),
-  			#   column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
-  			#          h5("2. Refinement"),
-  			#          uiOutput("used_refinement_parameters")
-  			#   ),
-  			#   column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
-  			#          h5("3. Alignment"),
-  			#          uiOutput("used_alignment_parameters")
-  			#   ),
-  			#   column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
-  			#          h5("4. Grouping"),
-  			#          uiOutput("used_grouping_parameters")
-  			#   ),
-  			#   column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
-  			#          h5("5. Filling"),
-  			#          uiOutput("used_grouping_parameters"),
-  			#   ),
-  			#   column(2)
-  			# )
 		)
 	)
 )
@@ -273,6 +213,10 @@ ui <- fillPage(
 
 server <- function(input, output, session) {
   nr_files <<- 0
+  default_relsqdiff <- tagList(
+    numericInput("noise", label = "noise", 102536.0),
+    numericInput("rsd_threshold", "threshold", 5)
+  )
   
   default_cent <- tagList(
     numericInput("ppm", label = "ppm", 74.77602),
@@ -394,6 +338,9 @@ server <- function(input, output, session) {
     }
     else if (input$Peak_method == 2) {
       peak_options <- default_matchedfilter
+    }
+    else if (input$Peak_method == 3) {
+      peak_options <- default_relsqdiff
     }
     output$peak_parameters <- renderUI(peak_options)
   })
@@ -1281,7 +1228,7 @@ server <- function(input, output, session) {
 	    }
 	  }
 	  ### Code necessary in order to create a stacked bar plot of all detected compounds
-	  stacked_samps <- data.frame(compound = character(0), sample = numeric(0), area = numeric(0))
+	  molmatches <- data.frame(compound = character(0), sample = numeric(0), area = numeric(0))
 	  for (sample in 1:length(unique(chromPeaks(xset)[,"sample"]))) {
 	    comp <- dfpeaks[dfpeaks[,"sample"] == sample,]
 	    for (row in 1:nrow(comp)){
@@ -1291,12 +1238,12 @@ server <- function(input, output, session) {
 	      }
 	      newrow <- data.frame(mol_name, sample, comp[row, "into"])
 	      names(newrow) <- c("compound", "sample", "area")
-	      stacked_samps <- rbind(stacked_samps, newrow)
+	      molmatches <- rbind(molmatches, newrow)
 	    }
 	  }
-	  # stacked_compounds <- plot_ly(stacked_samps, x = ~compound, y = ~area, type = 'bar', name = 'sample 1')
-	  # stacked_compounds <- fig %>% add_trace(y = ~LA_Zoo, name = 'LA Zoo')
-	  # stacked_compounds <- fig %>% layout(yaxis = list(title = 'Count'), barmode = 'stack')
+	  molmatches$area <- log10(molmatches$area)
+	  ## Splits the frame for the stacked plot into separate sub-frame. Necessary for plotly.
+	  stacked_samps <- split(molmatches, molmatches$sample)
 	  analysisTL <- renderUI(tagList(
 	    h4(paste("Output of job", job_id, ":\n", job_table_content[input$jobs_rows_selected, ]$job_name)),
         fluidRow(style='max-width:100%;padding:10px;',
@@ -1306,7 +1253,14 @@ server <- function(input, output, session) {
   			         ),
   			fluidRow(style='max-width:100%;padding:10px;',
   			         column(6,
-  			                renderPlot({ggplot(stacked_samps, aes(fill = as.character(stacked_samps$sample), y = log10(stacked_samps$area), x = stacked_samps$compound)) + geom_bar(position = "stack", stat="identity") + ggtitle("Plot of length \n by dose")})
+  			                renderPlotly({
+  			                  stacked_mols <- plot_ly(x = NULL, y = NULL, type = 'bar', name = 'SF Zoo')
+  			                  for (sample in 1:length(unique(chromPeaks(xset)[,"sample"]))) {
+  			                    stacked_mols <- stacked_mols %>% add_trace(stacked_samps[[sample]], x = stacked_samps[[sample]]$compound, y = stacked_samps[[sample]]$area, name =  selection$original_file_name[sample])
+  			                  }
+  			                  stacked_mols <- stacked_mols %>% layout(yaxis = list(title = 'Log10 of Detected Compounds AUC'), barmode = 'stack')
+  			                  stacked_mols
+  			                })
   			         ),
   			         column(6,
   			                div(DT::renderDataTable({
@@ -1324,8 +1278,10 @@ server <- function(input, output, session) {
   			                  ft_fv <- scale(featureValues(xset), scale = TRUE)
   			                  pc <- prcomp(t(na.omit(ft_fv)), center = TRUE)
   			                  pca <- plot_ly(x = NULL, y = NULL, z = NULL, type = "scatter3d") %>% layout(title  = "PCA", scene = list(xaxis = list(title = "PC1"), yaxis = list(title = "PC2"), zaxis = list(title = "PC3")))
-  			                  for (i in 1:nrow(selection)){
-  			                    pca <- pca %>% add_trace(y = pc$x[,2][i], x = pc$x[,1][i], z = pc$x[,3][i], name = paste(selection$original_file_name[i], "|", selection$metadata[i]), mode = 'markers')
+  			                  #hashes <- substr(names(pc$x[,1]), 0, 56)
+  			                  meta_selection <- selection$metadata
+  			                  for (metda in unique(meta_selection)){
+  			                    pca <- pca %>% add_trace(y = pc$x[,2][meta_selection == metda], x = pc$x[,1][meta_selection == metda], z = pc$x[,3][meta_selection == metda], name = paste(metda), mode = 'markers', hovertext = selection$original_file_name[meta_selection == metda], hoverinfo = "text")
   			                  }
   			                  pca
   			                })
@@ -1348,7 +1304,7 @@ server <- function(input, output, session) {
   			                      yp <- p[,"totIonCurrent"]
   			                      label1 <- dfpeaks[tp[peak], "mol_name_cosd"]
   			                      label2 <- dfpeaks[tp[peak], "mol_name_coeff"]
-  			                      chrom <- chrom %>% add_lines(x = xp, y = yp, name = paste("peak", peak, "| cosd: ", label1, "| coeffd:", label2), fill = 'tozeroy')
+  			                      chrom <- chrom %>% add_lines(x = xp, y = yp, name = paste(tp[peak]), fill = 'tozeroy', hovertext = paste(peak, ": ", label1, "|", label2), hoverinfo = "text")
   			                    }
   			                    y <- tic(aa)
   			                    x <- rtime(aa)
@@ -1367,11 +1323,21 @@ server <- function(input, output, session) {
   			         )
   			),
   			fluidRow(style='max-width:100%;padding:10px;',
-  			         column(6,
-  			                uiOutput("analysisVenn")
-  			         ),
-  			         column(6,
-  			                uiOutput("analysisHeatmap")
+  			         column(12,
+  			                ### HEATMAP
+  			                renderUI({
+  			                  heatframe <- data.frame(matrix(nrow = length(unique(molmatches$compound)), ncol = length(selection$original_file_name)))
+  			                  rownames(heatframe) <- unique(molmatches$compound)
+  			                  colnames(heatframe) <- selection$original_file_name
+  			                  for (df in stacked_samps){
+  			                    agg <- aggregate(. ~ compound, data=df[,c(1,3)], FUN=sum)
+  			                    heatframe[agg$compound, selection$original_file_name[df$sample[1]]] <- agg$area
+  			                  }
+  			                  heatframe[is.na(heatframe)] <- 0
+  			                  heatframe <- heatframe[rownames(heatframe) != "Unknown Compound",]
+  			                  heatframe <- heatframe[,sort(colnames(heatframe))]
+  			                  heatmaply(heatframe)
+  			                })
   			         )
   			),
   	    fluidRow(style='max-width:100%;padding:10px;',
@@ -1444,95 +1410,6 @@ server <- function(input, output, session) {
 	###########       ASYNC FUNCTIONS
 	# VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
 	#Function to process the selected MS-files
-	metaboanalyst_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pwd){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
-	  #####################
-	  send_query <- function(query){
-	    sqlconn <- dbConnect(
-	      drv = RMySQL::MySQL(),
-	      dbname='boloa',
-	      host="127.0.0.1",
-	      port=3306,
-	      user=db_usr,
-	      password=db_pwd
-	    )
-	    on.exit(dbDisconnect(sqlconn))
-	    dbSendQuery(sqlconn, query)
-	  }
-	  insert_query <- function(tb_name, data){
-	    sqlconn <- dbConnect(
-	      drv = RMySQL::MySQL(),
-	      dbname='boloa',
-	      host="127.0.0.1",
-	      port=3306,
-	      user=db_usr,
-	      password=db_pwd
-	    )
-	    on.exit(dbDisconnect(sqlconn))
-	    dbWriteTable(sqlconn, tb_name, data, append = TRUE, row.names = FALSE)
-	  }
-	  get_query <- function(query){
-	    sqlconn <- dbConnect(
-	      drv = RMySQL::MySQL(),
-	      dbname='boloa',
-	      host="127.0.0.1",
-	      port=3306,
-	      user=db_usr,
-	      password=db_pwd
-	    )
-	    on.exit(dbDisconnect(sqlconn))
-	    dbGetQuery(sqlconn, query)
-	  }
-	  ################
-	  tryCatch(
-	    {
-    	  files <- massfiles$file_path
-    	  # preset <- 3 # !!! CUSTOM PARAMETERS ARE NONFUNCTIONAL, AUTOMATIC HARDCODED. REMOVE WHEN FUNCTIONAL !!!
-    	  if (preset == 3) {
-    	    param_initial <- SetPeakParam(platform = "general")
-    	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '1/5 Performing ROI extraction...' WHERE job_id = ", job_id, ";", sep = "")))
-    	    raw_train <- PerformROIExtraction(files, rt.idx = 0.2, rmConts = FALSE, plot = FALSE)
-    	    send_query(stringr::str_glue(paste("UPDATE job SET job_status = '2/5 Performing parameter optimization...' WHERE job_id = ", job_id, ";", sep = "")))
-    	    def_params <- PerformParamsOptimization(raw_train, param = param_initial, ncore = 5)
-    	    send_query(stringr::str_glue(paste("UPDATE parameter SET min_peakwidth = ", toString(def_params$min_peakwidth), ", max_peakwidth = ", toString(def_params$max_peakwidth), ", mzdiff = ", toString(def_params$mzdiff), ", snthresh = ", toString(def_params$snthresh), ", bw = ", toString(def_params$bw), ", Peak_method = '", toString(def_params$Peak_method), "', ppm = ", toString(def_params$ppm), ", noise = ", toString(def_params$noise), ", prefilter = ", toString(def_params$prefilter), ", value_of_prefilter = ", toString(def_params$value_of_prefilter), ", minFraction = ", toString(def_params$minFraction), ", minSamples = ", toString(def_params$minSamples), ", maxFeatures = ", toString(def_params$maxFeatures), ", fitgauss = ", toString(def_params$fitgauss), ", mzCenterFun = '", toString(def_params$mzCenterFun), "', integrate = ", toString(def_params$integrate), ", extra = ", toString(def_params$extra), ", span = ", toString(def_params$span), ", smooth = '", toString(def_params$smooth), "', family = '", toString(def_params$family), "', polarity = '", toString(def_params$polarity), "', perc_fwhm = ", toString(def_params$perc_fwhm), ", max_charge = ", toString(def_params$max_charge), ", max_iso = ", toString(def_params$max_iso), ", corr_eic_th = ", toString(def_params$corr_eic_th), ", mz_abs_add = ", toString(def_params$mz_abs_add), ", rmConts = ", toString(def_params$rmConts), ", RT_method = '", toString(def_params$RT_method), "' WHERE job_id = ", job_id, ";", sep = "")))
-    	  }
-    	  else {
-    	    #fwhm = parameters$fwhm, steps= parameters$steps, peakBinSize = parameters$peakbinsize, criticalValue = parameters$criticalvalue, consecMissedLimit = parameters$consecmissedlimit, unions = parameters$unions, checkBack = parameters$checkback, withWave = parameters$withwave, profStep = parameters$profstep,
-    	    #print(t(parameters))
-    	    parameters[is.na(parameters)] <- 0
-    	    def_params <- SetPeakParam(Peak_method = parameters$Peak_method, RT_method = parameters$RT_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minFraction), minSamples = as.double(parameters$minSamples), maxFeatures = as.double(parameters$maxFeatures), mzCenterFun = parameters$mzCenterFun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmConts) #verboseColumns
-    	  }
-    	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/5 Importing raw spectra...' WHERE job_id = ", job_id, ";", sep = "")))
-    	  rawData <- ImportRawMSData(path = files, plotSettings = SetPlotParam(Plot = FALSE)) #ontbreekt ppm, min_peakwidth, max_peakwidth, mzdiff, snthresh, noise, prefilter, value_of_prefilter
-    	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '4/5 Performing peak profiling...' WHERE job_id = ", job_id, ";", sep = "")))
-    	  mSet <- PerformPeakProfiling(rawData, def_params, plotSettings = SetPlotParam(Plot = FALSE))
-    	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = '5/5 Performing peak annotation...' WHERE job_id = ", job_id, ";", sep = "")))
-    	  annParams <- SetAnnotationParam(polarity = def_params$polarity, mz_abs_add = def_params$mz_abs_add)
-    	  annotPeaks <- PerformPeakAnnotation(mSet, annParams)
-    	  maPeaks <- FormatPeakList(annotPeaks, annParams, filtIso =F, filtAdducts = FALSE, missPercent = 1)
-    	  end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
-    	  send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'Finished' WHERE job_id = ", job_id, ";", sep = "")))
-    	  send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
-    	  dir <- getwd()
-    	  dir <- paste(dir, "/msets/", toString(job_id), sep = "")
-    	  dir.create(dir)
-    	  Export.PeakTable(mSet = maPeaks, path = dir)
-    	  save(mSet, file = paste(dir, "/mSet.rda", sep = ""))
-    	  todf <- data.frame(
-    	    job_id = toString(job_id),
-    	    file_path_rda = toString(paste(dir, "/mSet.rda", sep = "")),
-    	    file_path_peaks = toString(paste(dir, "/", "metaboanalyst_input.csv", sep = ""))
-    	  )
-    	  insert_query("processed_sample", todf)
-    	  
-	    },
-	    error = function(cnd){
-	        print(cnd)
-	        send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED', end_time = '", format(Sys.time() + 60*60, "%Y-%m-%d %X"), "' WHERE job_id = ", job_id, ";", sep = "")))
-	      return(NA)
-	    }
-	  )
-	}
-
   xcms_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pw, job_plan){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
     library(xcms)
     register(bpstart(MulticoreParam(8)))
@@ -1671,11 +1548,59 @@ server <- function(input, output, session) {
               index = as.logical(def_params$index)
             )
           }
+          ## New method for peak detection, square difference
+          else if (as.integer(def_params$Peak_method) == 3){
+            def_params$ppm <- 50 # Necessary for other steps!
+            xset <- as(xset, "XCMSnExp")
+            noise <- def_params$noise
+            for (sampleN in 1:length(files)) {
+              raw_data <- readMSData(files = files[sampleN], pdata = new("NAnnotatedDataFrame"), mode = "onDisk")
+              raw_data <- filterRt(raw_data, c(as.double(def_params$rtrmin), as.double(def_params$rtrmax)))
+              altered_tic <- tic(raw_data) - sqrt(tic(raw_data))
+              diffalt <- (altered_tic - tic(raw_data))/tic(raw_data)*100
+              trend <- supsmu(rtime(raw_data), diffalt, bass = -100)
+              trend$y <- trend$y - mean(diffalt) / 5
+              newvals <- tic(raw_data)
+              newvals[diffalt < trend$y] <- NA
+              minrts <- c()
+              maxrts <- c()
+              minmzs <- c()
+              maxmzs <- c()
+              peakmzs <- c()
+              sampleSpec <- spectra(raw_data)
+              for (i in 2:length(newvals)) {
+                if (is.na(newvals[i]) != TRUE & is.na(newvals[i - 1])) {
+                  minrts <- c(minrts, rtime(raw_data)[i])
+                  scan_info <- intensity(sampleSpec[[i]])
+                  names(scan_info) <- mz(sampleSpec[[i]])
+                  scan_info <- scan_info[scan_info > noise]
+                  peakmzs <- append(peakmzs, as.double(names(scan_info)))
+                }
+                if (is.na(newvals[i]) & is.na(newvals[i - 1]) != TRUE) {
+                  maxrts <- c(maxrts, rtime(raw_data)[i - 1])
+                  minmzs <- c(minmzs, min(peakmzs))
+                  maxmzs <- c(maxmzs, max(peakmzs))
+                  peakmzs <- c()
+                }
+                if (length(peakmzs) > 0) {
+                  scan_info <- intensity(sampleSpec[[i]])
+                  names(scan_info) <- mz(sampleSpec[[i]])
+                  scan_info <- scan_info[scan_info > noise]
+                  peakmzs <- append(peakmzs, as.double(names(scan_info)))
+                }
+              }
+              new_ranges <- matrix(c(minmzs, maxmzs, minrts, maxrts), ncol = 4, nrow = length(maxrts), byrow = FALSE)
+              colnames(new_ranges) <- c('mzmin', 'mzmax', 'rtmin', 'rtmax')
+              xset <- manualChromPeaks(xset, new_ranges, samples = sampleN)
+            }
+          }
           else {
             return()
           }
-          print(peak_params)
-          xset <-findChromPeaks(xset, param = peak_params)
+          if (as.integer(def_params$Peak_method) != 3){
+            print(peak_params)
+            xset <-findChromPeaks(xset, param = peak_params)
+          }
         }
         if (job_plan %in% c(2, 3) | job_plan == 7){
           jstep <- 5
@@ -1828,7 +1753,6 @@ server <- function(input, output, session) {
             p <- unique(tt[tt[, "peak_id"] %in% tp, c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
             # Loop through each peak detected in a single file in order to retrieve information
             for (peak in 1:length(tp)) {
-              print(peak)
               # Retrieve information about a single peak
               p <- unique(tt[tt[, "peak_id"] == tp[peak], c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
               if (nrow(p) >= 1) {
@@ -1837,17 +1761,9 @@ server <- function(input, output, session) {
                 splash <- getSplash(apexspectra) #Splash generated from peak apex
                 search_splash <- paste(strsplit(splash , split = "-")[[1]][1:3], collapse='-')
                 # calculate the pearson correlation between mz and intensity
-                #corr <- cor(apexspectra[,2], apexspectra[,1], method = 'pearson')
-                # Create a linear model. This corrects for mz and rt.
-                v1 <- apexspectra[,1]
-                v2 <- apexspectra[,2]
-                coeff <- sum(v1 * v2)/sqrt(sum(v1^2)*sum(v2^2))
-                #coeff <- t$coeff[[1]] * t$coeff[2][[1]]
-                # Calculate range limits for confidence intervals
-                corr_UL_range <- 0.05 #Edit this value for a preferred limit
-                max_diff <- coeff * corr_UL_range
+                
                 # Calculate the relative mass DEPRECATED
-                rel_mass <- sum(apexspectra[,1]*apexspectra[,2])/sum(apexspectra[,2])
+                # rel_mass <- sum(apexspectra[,1]*apexspectra[,2])/sum(apexspectra[,2])
                 
                 # Splash filtering and modified cosine similarity classification: METHOD 1
                 mol_annot_splash <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND (splash LIKE '%", search_splash, "%');", sep = ""))
@@ -1879,35 +1795,45 @@ server <- function(input, output, session) {
                   highest_cosim <- mol_annot_splash[order(mol_annot_splash$sim, decreasing = TRUE),][1,]
                   highest_cosim_mol <- highest_cosim$mol_id
                   highest_cosim <- highest_cosim$sim
-                  print(highest_cosim)
                 }
                 
                 # Coeff similarity search METHOD: 2
-                if (coeff >= 0) {
-                  mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND coeff < ", sub("−", "-", paste(coeff + max_diff)), " AND coeff > ", sub("−", "-", paste(coeff - max_diff)), ";", sep = ""))
-                  mol_annot <- get_query(mol_annot)
-                }
-                else {
-                  mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND coeff < ", sub("−", "-", paste(coeff - max_diff)), " AND coeff > ", sub("−", "-", paste(coeff + max_diff)), ";", sep = ""))
-                  mol_annot <- get_query(mol_annot)
-                }
-                # If no matching compounds are available in the database, annotation is not possible
-                if (nrow(mol_annot) == 0) {
-                  mol_id_coeffsim <- "NULL"
-                  coeff_diff <- "NULL"
-                } else {
-                  # Calculate the difference between correlation of peak and matched compounds in database
-                  mol_annot$diff <- abs((coeff - mol_annot$coeff)/mol_annot$coeff)
-                  best_match <- mol_annot[order(mol_annot$diff),][1,]
-                  if (best_match$diff > corr_UL_range) { # Outdated
-                    mol_id_coeffsim <- "NULL"
-                    coeff_diff <- "NULL"
-                  }
-                  else {
-                    mol_id_coeffsim <- best_match$mol_id
-                    coeff_diff <- best_match$diff
-                  }
-                }
+                # v1 <- apexspectra[,1]
+                # v2 <- apexspectra[,2]
+                # coeff <- sum(v1 * v2)/sqrt(sum(v1^2)*sum(v2^2))
+                # # Calculate range limits for confidence intervals
+                # corr_UL_range <- 0.05 #Edit this value for a preferred limit
+                # max_diff <- coeff * corr_UL_range
+                # 
+                # 
+                # if (coeff >= 0) {
+                #   mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND coeff < ", sub("−", "-", paste(coeff + max_diff)), " AND coeff > ", sub("−", "-", paste(coeff - max_diff)), ";", sep = ""))
+                #   mol_annot <- get_query(mol_annot)
+                # }
+                # else {
+                #   mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND coeff < ", sub("−", "-", paste(coeff - max_diff)), " AND coeff > ", sub("−", "-", paste(coeff + max_diff)), ";", sep = ""))
+                #   mol_annot <- get_query(mol_annot)
+                # }
+                # # If no matching compounds are available in the database, annotation is not possible
+                # if (nrow(mol_annot) == 0) {
+                #   mol_id_coeffsim <- "NULL"
+                #   coeff_diff <- "NULL"
+                # } else {
+                #   # Calculate the difference between correlation of peak and matched compounds in database
+                #   mol_annot$diff <- abs((coeff - mol_annot$coeff)/mol_annot$coeff)
+                #   best_match <- mol_annot[order(mol_annot$diff),][1,]
+                #   if (best_match$diff > corr_UL_range) { # Outdated
+                #     mol_id_coeffsim <- "NULL"
+                #     coeff_diff <- "NULL"
+                #   }
+                #   else {
+                #     mol_id_coeffsim <- best_match$mol_id
+                #     coeff_diff <- best_match$diff
+                #   }
+                # }
+                mol_id_coeffsim <- "NULL"
+                coeff_diff <- "NULL"
+                coeff <- "NULL"
                 chromaa <- as.data.frame(chromPeaks(aa))
                 send_query(stringr::str_glue(paste("INSERT INTO peak VALUES (",
                                                    job_id, ", '", #job_id
