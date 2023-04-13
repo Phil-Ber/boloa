@@ -101,7 +101,7 @@ portnr <- 7123
 
 
 # all_params <- c("Peak_method", "RT_method", "mzdiff", "snthresh", "bw", "ppm", "min_peakwidth", "max_peakwidth", "noise", "prefilter", "value_of_prefilter", "minFraction", "minSamples", "maxFeatures", "mzCenterFun", "integrate", "extra", "span", "smooth", "family", "fitgauss", "polarity", "perc_fwhm", "mz_abs_iso", "max_charge", "max_iso", "corr_eic_th", "mz_abs_add", "rmConts", "verboseColumns")
-all_params <- c("Peak_method", "Ref_method", "Align_method", "Group_method", "absMz", "absRt", "baseValue", "binSize", "bw", "centerSample", "checkBack", "consecMissedLimit", "criticalValue", "distance", "distFun", "expandMz", "expandRt", "extendLengthMSW", "extraPeaks", "factorDiag", "factorGap", "family", "firstBaselineCheck", "fitgauss", "fixedMz", "fixedRt", "fwhm", "gapExtend", "gapInit", "impute", "index", "initPenalty", "integrate", "kNN", "localAlignment", "max", "maxFeatures", "minFraction", "minProp", "minSamples", "mzCenterFun", "mzdiff", "mzVsRtBalance", "ncol", "noise", "nrow", "nValues", "peakGroupsMatrix", "max_peakwidth", "min_peakwidth", "ppm", "prefilter", "value_of_prefilter", "response", "roiList", "roiScales", "sampleGroups", "sigma", "smooth", "snthresh", "span", "steps", "subset", "subsetAdjust", "threshold", "unions", "value", "verboseColumns", "withWave", "rtrange")
+all_params <- c("Peak_method", "Ref_method", "Align_method", "Group_method", "absMz", "absRt", "baseValue", "binSize", "bw", "centerSample", "checkBack", "consecMissedLimit", "criticalValue", "distance", "distFun", "expandMz", "expandRt", "extendLengthMSW", "extraPeaks", "factorDiag", "factorGap", "family", "firstBaselineCheck", "fitgauss", "fixedMz", "fixedRt", "fwhm", "gapExtend", "gapInit", "impute", "index", "initPenalty", "integrate", "kNN", "localAlignment", "max", "maxFeatures", "minFraction", "minProp", "minSamples", "mzCenterFun", "mzdiff", "mzVsRtBalance", "ncol", "noise", "nrow", "nValues", "peakGroupsMatrix", "max_peakwidth", "min_peakwidth", "ppm", "prefilter", "value_of_prefilter", "response", "roiList", "roiScales", "sampleGroups", "sigma", "smooth", "snthresh", "span", "steps", "subset", "subsetAdjust", "threshold", "unions", "value", "verboseColumns", "withWave", "rtrange", "rsd_threshold", "simthresh")
 lcms_only <- tail(all_params, n=9)
 
 # send_query(stringr::str_glue("SET GLOBAL local_infile=1;"))
@@ -168,7 +168,7 @@ ui <- fillPage(
 					),
 					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
 						h5("1. Detection"),
-						selectInput("Peak_method", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2, "relsqdiff" = 3)),
+						selectInput("Peak_method", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2, "relsqdiff" = 3), selected = 3),
 						uiOutput("peak_parameters")
 					),
 					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
@@ -214,8 +214,9 @@ ui <- fillPage(
 server <- function(input, output, session) {
   nr_files <<- 0
   default_relsqdiff <- tagList(
-    numericInput("noise", label = "noise", 102536.0),
-    numericInput("rsd_threshold", "threshold", 5)
+    numericInput("noise", label = "noise", 1000),
+    numericInput("rsd_threshold", "threshold", 5), #NEW ADD TO DB
+    numericInput("simthresh", "simthresh", 800)
   )
   
   default_cent <- tagList(
@@ -267,9 +268,9 @@ server <- function(input, output, session) {
   )
   
   default_mnp <- tagList(
-    numericInput("expandRt", label = "expandRt", 4),
-    numericInput("expandMz", label = "expandMz", 4),
-    numericInput("minProp", label = "minProp", 1)
+    numericInput("expandRt", label = "expandRt", 0),
+    numericInput("expandMz", label = "expandMz", 2),
+    numericInput("minProp", label = "minProp", 0.75)
   )
   
   default_fi <- tagList(
@@ -962,9 +963,14 @@ server <- function(input, output, session) {
 	  dfpeaks[rownames(dfpeaks) %in% detected_mols_cos$peak_id,"mol_name_cosd"] <- detected_mols_cos$mol_name
 	  dfpeaks[rownames(dfpeaks) %in% detected_mols_cos$peak_id,"pubid_cosd"] <- detected_mols_cos$pubid
 	  dfpeaks[rownames(dfpeaks) %in% detected_mols_cos$peak_id,"cossim"] <- detected_mols_cos$modcosinesim
-	  dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"mol_name_coeff"] <- detected_mols_coeff$mol_name
-	  dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"pubid_coeff"] <- detected_mols_coeff$pubid
-	  dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"coeff_diff"] <- detected_mols_coeff$coeff_diff
+	  # dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"mol_name_coeff"] <- detected_mols_coeff$mol_name
+	  # dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"pubid_coeff"] <- detected_mols_coeff$pubid
+	  # dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"coeff_diff"] <- detected_mols_coeff$coeff_diff
+	  # Add sample name to dataframe
+	  dfpeaks$sample_name <- NULL
+	  for (sample_index in 1:length(selection$original_file_name)) {
+	    dfpeaks[dfpeaks[,"sample"] == sample_index,"sample_name"] <- selection$original_file_name[sample_index]
+	  }
 	  observeEvent(input$Peak_methodA, ignoreInit =  T, {
 	    peak_options <- c(default_cent, default_massif, default_matchedfilter)[is.na(input$Peak_methodA) + 1]
 	  })
@@ -1072,6 +1078,11 @@ server <- function(input, output, session) {
 	        numericInput("stepsA", label = "steps", value = used_parameters$steps),
 	        numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
 	        checkboxInput("indexA", label = "index", value = used_parameters$index)
+	      )
+	    }
+	    else if (used_parameters$Peak_method == 3 & input$Peak_methodA == 3) {
+	      peak_options <- tagList(
+	        shiny::p("Not yet functional")
 	      )
 	    }
 	  }
@@ -1334,6 +1345,8 @@ server <- function(input, output, session) {
   			                    heatframe[agg$compound, selection$original_file_name[df$sample[1]]] <- agg$area
   			                  }
   			                  heatframe[is.na(heatframe)] <- 0
+  			                  heatframe[is.na(heatframe)] <- 0
+  			                  heatframe <- heatframe[!is.infinite(rowSums(heatframe)),]
   			                  heatframe <- heatframe[rownames(heatframe) != "Unknown Compound",]
   			                  heatframe <- heatframe[,sort(colnames(heatframe))]
   			                  heatmaply(heatframe)
@@ -1363,7 +1376,7 @@ server <- function(input, output, session) {
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("1. Detection"),
-  	                    selectInput("Peak_methodA", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2), selected = used_parameters$Peak_method),
+  	                    selectInput("Peak_methodA", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2, "n3" = 3), selected = used_parameters$Peak_method),
                       renderUI(peak_options),
                       actionButton("resub1", label = "\n Rerun")
   	             ),
@@ -1550,45 +1563,81 @@ server <- function(input, output, session) {
           }
           ## New method for peak detection, square difference
           else if (as.integer(def_params$Peak_method) == 3){
-            def_params$ppm <- 50 # Necessary for other steps!
+            def_params$ppm <- 20 # Necessary for other steps!
             xset <- as(xset, "XCMSnExp")
-            noise <- def_params$noise
             for (sampleN in 1:length(files)) {
               raw_data <- readMSData(files = files[sampleN], pdata = new("NAnnotatedDataFrame"), mode = "onDisk")
               raw_data <- filterRt(raw_data, c(as.double(def_params$rtrmin), as.double(def_params$rtrmax)))
+              # Subtract squared tic from original
               altered_tic <- tic(raw_data) - sqrt(tic(raw_data))
+              # Calcualte of difference between subtracted tic and original tic
               diffalt <- (altered_tic - tic(raw_data))/tic(raw_data)*100
+              # Create a local linear regression using supsmu
               trend <- supsmu(rtime(raw_data), diffalt, bass = -100)
+              # Calculation of threshold based on a local regression model
               trend$y <- trend$y - mean(diffalt) / 5
               newvals <- tic(raw_data)
+              # Remove scans below threshold
               newvals[diffalt < trend$y] <- NA
+              # Initialisation of vectors for 'manual' peak assignment
               minrts <- c()
               maxrts <- c()
               minmzs <- c()
               maxmzs <- c()
+              simthresh <- as.double(def_params$simthresh) # Cosine similarty threshold for new peak splitting
               peakmzs <- c()
+              sim <- 0
               sampleSpec <- spectra(raw_data)
+              # Loop through the peak TIC in order to retieve information and separate overlapping peaks.
               for (i in 2:length(newvals)) {
-                if (is.na(newvals[i]) != TRUE & is.na(newvals[i - 1])) {
+                # If the current is above and the previous is below threshold:
+                # Initialise new peak
+                if (!is.na(newvals[i]) & is.na(newvals[i - 1])) {
                   minrts <- c(minrts, rtime(raw_data)[i])
                   scan_info <- intensity(sampleSpec[[i]])
                   names(scan_info) <- mz(sampleSpec[[i]])
-                  scan_info <- scan_info[scan_info > noise]
+                  scan_info <- scan_info[scan_info > as.double(def_params$noise)]
                   peakmzs <- append(peakmzs, as.double(names(scan_info)))
                 }
-                if (is.na(newvals[i]) & is.na(newvals[i - 1]) != TRUE) {
+                # If the current is below and the previous is above threshold or if both scans are above but similarity is below
+                # End of peak. Wrap up values.
+                if ((is.na(newvals[i]) & !is.na(newvals[i - 1])) | (sim < simthresh & !is.na(newvals[i]) & !is.na(newvals[i - 1]))) {
                   maxrts <- c(maxrts, rtime(raw_data)[i - 1])
                   minmzs <- c(minmzs, min(peakmzs))
                   maxmzs <- c(maxmzs, max(peakmzs))
                   peakmzs <- c()
                 }
-                if (length(peakmzs) > 0) {
+                # If the current and previous scans are above threshold
+                # Append values to peak or initialise new peak with low cosim.
+                if (!is.na(newvals[i]) & !is.na(newvals[i - 1])) {
+                  # If the previously calculated similarity was below simtrhesh: Initialise new peak
+                  if (sim < simthresh) {
+                    minrts <- c(minrts, rtime(raw_data)[i])
+                    scan_info <- intensity(sampleSpec[[i]])
+                    names(scan_info) <- mz(sampleSpec[[i]])
+                    scan_info <- scan_info[scan_info > as.double(def_params$noise)]
+                    peakmzs <- append(peakmzs, as.double(names(scan_info)))
+                  }
+                  # Retrieve information about the current and previous scan for comparison
                   scan_info <- intensity(sampleSpec[[i]])
                   names(scan_info) <- mz(sampleSpec[[i]])
-                  scan_info <- scan_info[scan_info > noise]
+                  scan_info <- scan_info[scan_info > as.double(def_params$noise)]
                   peakmzs <- append(peakmzs, as.double(names(scan_info)))
+                  scan_info_prev <- intensity(sampleSpec[[i - 1]])
+                  names(scan_info_prev) <- mz(sampleSpec[[i - 1]])
+                  scan_info_prev <- scan_info_prev[scan_info_prev > as.double(def_params$noise)]
+                  
+                  # Pad x and y to make lengths equal
+                  x <- as.double(names(scan_info))
+                  y <- as.double(names(scan_info_prev))
+                  x <- c(x, rep(0, abs(length(y) - length(x))))
+                  y <- c(y, rep(0, abs(length(x) - length(y))))
+                  
+                  # Calculate cosine similarity (composite score)
+                  sim <- 999*(sum(sqrt(x) * sqrt(y))^2)/(sum(x)*sum(y))
                 }
               }
+              # Add peaks to xset object
               new_ranges <- matrix(c(minmzs, maxmzs, minrts, maxrts), ncol = 4, nrow = length(maxrts), byrow = FALSE)
               colnames(new_ranges) <- c('mzmin', 'mzmax', 'rtmin', 'rtmax')
               xset <- manualChromPeaks(xset, new_ranges, samples = sampleN)
@@ -1725,7 +1774,7 @@ server <- function(input, output, session) {
             fillparam <- FillChromPeaksParam(
               expandMz = as.double(def_params$expandMz),
               expandRt = as.double(def_params$expandRt),
-              ppm = as.double(def_params$ppm),
+              ppm = 10,
               fixedMz = as.double(def_params$fixedMz),
               fixedRt = as.double(def_params$fixedRt)
             )
@@ -1739,32 +1788,50 @@ server <- function(input, output, session) {
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '9/9 Annotating peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           # Remove previous annotation for same job, necessary for reruns.
           send_query(stringr::str_glue(paste("DELETE FROM peak WHERE job_id = ", job_id, ";", sep = "")))
-          annot_spectra <- featureSpectra(xset, msLevel = 1, return.type = "Spectra", skipFilled = FALSE)
+          annot_spectra <- featureSpectra(xset, msLevel = 1, return.type = "Spectra", skipFilled = TRUE)
           save(annot_spectra, file = paste(dir, "/", job_id, "_annot.rda", sep = ""))
           chromtype <- c("LC", "GC")[as.integer(def_params$sample_type)]
+          # Store information about the detected peaks
+          tt <- spectraData(annot_spectra)
           # Loop through all the indexes of filenames used in the job.
           for (i in 1:length(files)) {
-            # Store information about the detected peaks
-            tt <- spectraData(annot_spectra)
             # Split the xset into a single file.
             aa <- filterFile(xset, i)
             tp <- rownames(chromPeaks(aa))
             # Take various columns from the tt variable.
             p <- unique(tt[tt[, "peak_id"] %in% tp, c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
             # Loop through each peak detected in a single file in order to retrieve information
+            print(length(tp))
             for (peak in 1:length(tp)) {
               # Retrieve information about a single peak
               p <- unique(tt[tt[, "peak_id"] == tp[peak], c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
               if (nrow(p) >= 1) {
                 apex <- p[order(p[,"totIonCurrent"], decreasing = TRUE ),][1,] #Scan number of peak apex
                 apexspectra <- peaksData(annot_spectra[apex[,"scanIndex"]])[[1]]
+                # Subtract noise from intensities
+                apexspectra[,2] <- apexspectra[,2] - as.double(def_params$noise)
+                # Keep only positive intensities
+                apexspectra <- apexspectra[apexspectra[,2] > 0,]
+                # Calculate relative abundance for intensity:
+                #   Divide all intensities by maximum intensity.
+                apexspectra[,2] <- (apexspectra[,2]/max(apexspectra[,2])) * 100
                 splash <- getSplash(apexspectra) #Splash generated from peak apex
                 search_splash <- paste(strsplit(splash , split = "-")[[1]][1:3], collapse='-')
                 # calculate the pearson correlation between mz and intensity
                 
-                # Calculate the relative mass DEPRECATED
+                spectrum_formatted <- c()
+                pspec <- apexspectra
+                colnames(pspec) <- NULL
+                # Format data to [mz]:[intensity]
+                rownames(pspec) <- NULL
+                for (specrow in 1:nrow(pspec)) {
+                  spectrum_formatted <- c(spectrum_formatted, paste(pspec[specrow,], collapse = ':'))
+                }
+                spectrum_formatted <- paste(spectrum_formatted, collapse = " ")
+                # Calculate the relative mass !DEPRECATED!
                 # rel_mass <- sum(apexspectra[,1]*apexspectra[,2])/sum(apexspectra[,2])
                 
+                # Molecule annotation !DEPRECATED! NOT MY RESPONSIBILITY, FRAMEWORK IS HERE
                 # Splash filtering and modified cosine similarity classification: METHOD 1
                 mol_annot_splash <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND (splash LIKE '%", search_splash, "%');", sep = ""))
                 mol_annot_splash <- get_query(mol_annot_splash)
@@ -1772,7 +1839,7 @@ server <- function(input, output, session) {
                   highest_cosim_mol <- "NULL"
                   highest_cosim <- "NULL"
                 } else {
-                  # Interate through all matched compounds
+                  # Iterate through all matched compounds
                   scan1 <- apexspectra
                   for (mspectr in 1:length(mol_annot_splash)) {
                     scan2 <- mol_annot_splash$spectrum[mspectr]
@@ -1785,18 +1852,27 @@ server <- function(input, output, session) {
                       ints <- c(ints, as.double(strsplit(section, ":")[[1]][2]))
                     }
                     scan2 <- data.frame(mzs, ints)
-                    minlength <- min(nrow(scan1), nrow(scan2))
-                    x <- scan1[1:minlength,1] * scan1[1:minlength,2]
-                    y <- scan2[1:minlength,1] * scan2[1:minlength,2]
+
+                    # minlength <- min(nrow(scan1), nrow(scan2))
+                    x <- scan1[,1] * ((scan1[,2] / sum(scan1[,2])) * 100)
+                    y <- scan2[,1] * ((scan2[,2] / sum(scan2[,2])) * 100)
+                    x <- c(x, rep(0, abs(length(y) - length(x))))
+                    y <- c(y, rep(0, abs(length(x) - length(y))))
+                    x <- x + 1
+                    y <- y + 1
                     # Calculate the cosine similarity between peak and compound
-                    sim <- sum(x * y)/sqrt(sum(x^2)*sum(y^2))
+                    sim <- 999*(sum(sqrt(x) * sqrt(y))^2)/(sum(x)*sum(y))
                     mol_annot_splash[mspectr,"sim"] <- sim
                   }
                   highest_cosim <- mol_annot_splash[order(mol_annot_splash$sim, decreasing = TRUE),][1,]
                   highest_cosim_mol <- highest_cosim$mol_id
                   highest_cosim <- highest_cosim$sim
+                  if (highest_cosim < 800) { # If highest is below threshold
+                    highest_cosim_mol <- "NULL"
+                    highest_cosim <- "NULL"
+                  }
                 }
-                
+
                 # Coeff similarity search METHOD: 2
                 # v1 <- apexspectra[,1]
                 # v2 <- apexspectra[,2]
@@ -1804,8 +1880,8 @@ server <- function(input, output, session) {
                 # # Calculate range limits for confidence intervals
                 # corr_UL_range <- 0.05 #Edit this value for a preferred limit
                 # max_diff <- coeff * corr_UL_range
-                # 
-                # 
+                #
+                #
                 # if (coeff >= 0) {
                 #   mol_annot <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND coeff < ", sub("−", "-", paste(coeff + max_diff)), " AND coeff > ", sub("−", "-", paste(coeff - max_diff)), ";", sep = ""))
                 #   mol_annot <- get_query(mol_annot)
@@ -1831,6 +1907,11 @@ server <- function(input, output, session) {
                 #     coeff_diff <- best_match$diff
                 #   }
                 # }
+                ##### TESTING
+                # highest_cosim_mol <- "NULL"
+                # highest_cosim <- "NULL"
+                # 
+                # 
                 mol_id_coeffsim <- "NULL"
                 coeff_diff <- "NULL"
                 coeff <- "NULL"
@@ -1852,7 +1933,8 @@ server <- function(input, output, session) {
                                                    chromaa[peak,"rtmin"], ", ", #rtmin
                                                    chromaa[peak,"rtmax"], ", ", #rtmax
                                                    apex[,"totIonCurrent"], ", '", #apex_tic
-                                                   splash, "'", #splash key
+                                                   splash, "', '", #splash key
+                                                   spectrum_formatted, "'",
                                                    ");", sep = "")))
               }
             }

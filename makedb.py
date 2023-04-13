@@ -57,7 +57,7 @@ def make_job():
 
 def make_parameter():
 	cur.execute("DROP TABLE IF EXISTS parameter;")
-	cur.execute("CREATE TABLE parameter ("
+	cur.execute("CREATE TABLE parameter (" ## VOEG NOG rsd_threshold toe!!
 		"job_id INT PRIMARY KEY, "
 		"sample_type DOUBLE, "
 		"Peak_method TINYINT, "
@@ -131,6 +131,8 @@ def make_parameter():
     "withWave BOOLEAN, "
     "rtrmin DOUBLE, "
     "rtrmax DOUBLE, "
+    "rsd_threshold DOUBLE, "
+    "simthresh DOUBLE, "
 		"FOREIGN KEY (job_id) REFERENCES job(job_id) ON DELETE CASCADE"
 		");"
 	)
@@ -181,6 +183,7 @@ def make_peak():
     "rtmax DOUBLE, "
     "apex_tic DOUBLE, "
     "splash VARCHAR(100), "
+    "spectrum MEDIUMTEXT, "
     "PRIMARY KEY(job_id, peak_id, sample_hash), "
     "FOREIGN KEY (sample_hash) REFERENCES sample(sample_hash) ON DELETE CASCADE, "
     "FOREIGN KEY(job_id) REFERENCES job(job_id) ON DELETE CASCADE, "
