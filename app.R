@@ -1,7 +1,9 @@
 #!/usr/bin/env Rscript
 
+# This loads the variables containing the database username and password.
 load('.hidden.RData')
 
+# Below all libraries which are required to run the script are imported.
 library(shiny)
 library(shinyBS)
 library(shinyjs)
@@ -26,34 +28,11 @@ library(Spectra)
 #library(deldir)
 #library(xcms)
 library(heatmaply)
-
-#if (!require("BiocManager", quietly = TRUE))
-#BiocManager::install("OptiLCMS")
-tryCatch(
-	expr = {
-		library("MetaboAnalystR")
-	  library("OptiLCMS")
-	  #library(shinyvalidate)
-	},
-	error = {
-	#   install.packages("BiocManager")
-	# 	#pacman::p_load(c("impute", "pcaMethods", "globaltest", "GlobalAncova", "Rgraphviz", "preprocessCore", "genefilter", "SSPA", "sva", "limma", "KEGGgraph", "siggenes","BiocParallel", "MSnbase", "multtest", "RBGL", "edgeR"), character.only = TRUE)
-		pacman::p_load(c("Rserve", "ellipse", "scatterplot3d", "Cairo", "randomForest", "caTools", "e1071", "som", "impute", "pcaMethods", "RJSONIO", "ROCR", "globaltest", "GlobalAncova", "Rgraphviz", "preprocessCore", "genefilter", "pheatmap", "sva", "Rcpp", "pROC", "data.table", "limma", "car", "fitdistrplus", "lars", "Hmisc", "magrittr", "methods", "xtable", "pls", "caret", "lattice", "igraph", "gplots", "KEGGgraph", "reshape", "RColorBrewer", "tibble", "siggenes", "plotly", "xcms", "CAMERA", "fgsea", "MSnbase", "BiocParallel", "multtest", "RBGL", "edgeR", "fgsea", "crmn", "progress", "qs", "glasso"), character.only = TRUE)
-	# 	BiocManager::install("mtbls2")
-	  # install_github("berlinguyinca/spectra-hash", subdir="splashR")
-	#   #install.packages("shinyvalidate", repos="https://mirrors.evoluso.com/CRAN/")
-	# 	devtools::install_github("xia-lab/MetaboAnalystR", build = TRUE, build_vignettes = TRUE)
-	# 	devtools::install_github("xia-lab/OptiLCMS", build = TRUE, build_vignettes = FALSE, build_manual =TRUE)
-	},
-	finally = {
-		library("MetaboAnalystR")
-	  library("OptiLCMS")
-	  #library(shinyvalidate)
-	}
-)
+pacman::p_load(c("Rserve", "ellipse", "scatterplot3d", "Cairo", "randomForest", "caTools", "e1071", "som", "impute", "pcaMethods", "RJSONIO", "ROCR", "globaltest", "GlobalAncova", "Rgraphviz", "preprocessCore", "genefilter", "pheatmap", "sva", "Rcpp", "pROC", "data.table", "limma", "car", "fitdistrplus", "lars", "Hmisc", "magrittr", "methods", "xtable", "pls", "caret", "lattice", "igraph", "gplots", "KEGGgraph", "reshape", "RColorBrewer", "tibble", "siggenes", "plotly", "xcms", "CAMERA", "fgsea", "MSnbase", "BiocParallel", "multtest", "RBGL", "edgeR", "fgsea", "crmn", "progress", "qs", "glasso"), character.only = TRUE)
 # install_github("berlinguyinca/spectra-hash", subdir="splashR")
 library(splashR)
-#print(warnings())
+
+# This function simply returns columns from a selected table in the database.
 get_query <- function(query){
 	sqlconn <- dbConnect(
 		drv = RMySQL::MySQL(),
@@ -67,6 +46,8 @@ get_query <- function(query){
 	dbGetQuery(sqlconn, query)
 }
 
+# This function allows R to send a query to the database. Used for more complex
+# goals like joins.
 send_query <- function(query){
   sqlconn <- dbConnect(
     drv = RMySQL::MySQL(),
@@ -80,6 +61,11 @@ send_query <- function(query){
   dbSendQuery(sqlconn, query)
 }
 
+# This function allows for the simple insertion of data into the database.
+# The function allows for the input of a data.frame object. The object is then
+# inserted into the database under the table which has been inputted.
+# Warning: The colnames() in the data.frame have to match 100% with those in
+# the desired table of the database.
 insert_query <- function(tb_name, data){
 	sqlconn <- dbConnect(
 		drv = RMySQL::MySQL(),
@@ -93,20 +79,32 @@ insert_query <- function(tb_name, data){
 	dbWriteTable(sqlconn, tb_name, data, append = TRUE, row.names = FALSE)
 }
 
+# Multisession allows for parallel processing. Necessary for the future package.
 plan(multisession)
 
+# Allows for larger file uploads. Necessary for mass spectrometry data.
 options(shiny.maxRequestSize=10000*1024^2)
+
+# Shiny configuration.
 hostip <- "145.97.18.149"
 portnr <- 7123
+# portnr <- 9705
 
 
-# all_params <- c("Peak_method", "RT_method", "mzdiff", "snthresh", "bw", "ppm", "min_peakwidth", "max_peakwidth", "noise", "prefilter", "value_of_prefilter", "minFraction", "minSamples", "maxFeatures", "mzCenterFun", "integrate", "extra", "span", "smooth", "family", "fitgauss", "polarity", "perc_fwhm", "mz_abs_iso", "max_charge", "max_iso", "corr_eic_th", "mz_abs_add", "rmConts", "verboseColumns")
+# This variable contains all the parameters which can possibly be used in peak
+# detection. Adding new methods require adding the parameters to this array.
+# Warning: Check first in this array if a parameter is already in use.
+# If an overlap occurs you don't need to add a new parameter to the respective
+# table in the "makedb.py" script.
 all_params <- c("Peak_method", "Ref_method", "Align_method", "Group_method", "absMz", "absRt", "baseValue", "binSize", "bw", "centerSample", "checkBack", "consecMissedLimit", "criticalValue", "distance", "distFun", "expandMz", "expandRt", "extendLengthMSW", "extraPeaks", "factorDiag", "factorGap", "family", "firstBaselineCheck", "fitgauss", "fixedMz", "fixedRt", "fwhm", "gapExtend", "gapInit", "impute", "index", "initPenalty", "integrate", "kNN", "localAlignment", "max", "maxFeatures", "minFraction", "minProp", "minSamples", "mzCenterFun", "mzdiff", "mzVsRtBalance", "ncol", "noise", "nrow", "nValues", "peakGroupsMatrix", "max_peakwidth", "min_peakwidth", "ppm", "prefilter", "value_of_prefilter", "response", "roiList", "roiScales", "sampleGroups", "sigma", "smooth", "snthresh", "span", "steps", "subset", "subsetAdjust", "threshold", "unions", "value", "verboseColumns", "withWave", "rtrange", "rsd_threshold", "simthresh")
 lcms_only <- tail(all_params, n=9)
 
+
+# If an error occurs regarding the database, send this query.
 # send_query(stringr::str_glue("SET GLOBAL local_infile=1;"))
 
 ui <- fillPage(
+  # This object contains all the hard coded front end elements.
   padding = NULL,
   autoWaiter(color = "white", html = spin_3()),
   
@@ -211,12 +209,16 @@ ui <- fillPage(
 )
 
 
+# This function contains the back end for the web application.
 server <- function(input, output, session) {
   nr_files <<- 0
+  
+  # The objects below contain peak processing methods. If the changing of
+  # default parameters is desired: change them here.
   default_relsqdiff <- tagList(
-    numericInput("noise", label = "noise", 1000),
-    numericInput("rsd_threshold", "threshold", 5), #NEW ADD TO DB
-    numericInput("simthresh", "simthresh", 800)
+    numericInput("noise", label = "noise", 10000),
+    numericInput("rsd_threshold", "threshold", 5),
+    numericInput("simthresh", "simthresh", 900)
   )
   
   default_cent <- tagList(
@@ -327,9 +329,14 @@ server <- function(input, output, session) {
     numericInput("kNN", label = "kNN", 10)
   )
   
+  # This is displayed in case the user proceeds to the analysis tab before
+  # properly selecting a job to inspect.
   output$job_analysis <- renderUI(tagList(
     h5('Please select a finished job in the "Jobs" panel to analyse data'),
   ))
+  
+  # This function checks if the user changes the selection of a peak detection
+  # method. This way alteration displays correct parameters for another method.
   observeEvent(input$Peak_method, {
     if (input$Peak_method == 0) {
       peak_options <- default_cent
@@ -346,6 +353,8 @@ server <- function(input, output, session) {
     output$peak_parameters <- renderUI(peak_options)
   })
   
+  # This function checks if the user changes the selection of a peak refinement
+  # method. This way alteration displays correct parameters for another method.
   observeEvent(input$Ref_method, {
     if (input$Ref_method == 0) {
       ref_options <- default_mnp
@@ -355,7 +364,9 @@ server <- function(input, output, session) {
     }
     output$refinement_parameters <- renderUI(ref_options)
   })
-   
+  
+  # This function checks if the user changes the selection of a peak alingment
+  # method. This way alteration displays correct parameters for another method.
   observeEvent(input$Align_method, {
     if (input$Align_method == 0) {
       alig_options <- default_obiwarp
@@ -366,6 +377,8 @@ server <- function(input, output, session) {
     output$alignment_parameters <- renderUI(alig_options)
   })
   
+  # This function checks if the user changes the selection of a peak grouping
+  # method. This way alteration displays correct parameters for another method.
   observeEvent(input$Group_method, {
     if (input$Group_method == 0) {
       group_options <- default_pd
@@ -379,14 +392,19 @@ server <- function(input, output, session) {
     output$grouping_parameters <- renderUI(group_options)
   })
   
-	#Weergave van geuploade bestand(en)
+	# This allows for inputting metadata or labels for samples which the user
+  # would like to upload.
 	observeEvent(input$msdata, {
 		output$fileOverview <- renderUI({
 			file <- input$msdata
 			ext <- tools::file_ext(file$datapath)
 			req(file)
+			# Checks if the filetype is correct.
 			validate(need(ext %in% c("raw", "mzXML", "CDF"), "Please upload a .raw, .CDF or .mzXML file!"))
 			nr_files <<- length(file[,3])
+			# Returns text input boxes with a quantity equal to the number of samples
+			# which have been uploaded. IDs of the boxes are generated with the format
+			# "meta(n)" where n is the index of the sample.
 			lapply(1:nr_files, function(i) {
 			  if (i == 1) {
 			    p('Please edit file metadata (REQUIRED!)')
@@ -397,12 +415,14 @@ server <- function(input, output, session) {
   	})
   })
   
-	#Update van tabel op "Upload data" tab
+	# Reactively updates content when a switch of a tab or the upload of a sample
+	# is detected. Necessary for datatables. Especially the sample table.
 	updateEvent <- reactive({
 		list(input$tabSwitch, input$dataupl)
 	})
 	
-	#Sample selection table
+	# Responsible for the creation of the sample table in the sample selection
+	# screen.
 	observeEvent(updateEvent, {
 		query <- stringr::str_glue("SELECT * FROM sample ORDER BY upload_date DESC;")
 		sample_table_content <<- get_query(query)
@@ -419,7 +439,7 @@ server <- function(input, output, session) {
 		}, server = FALSE)
 	})
 	
-	#Job table
+	# Responsible for the creation of the running and/or finished jobs table.
 	observeEvent(input$updateJobsTable, {
 	  query <- stringr::str_glue("SELECT * FROM job ORDER BY start_time DESC;")
 	  job_table_content <<- get_query(query)
@@ -432,8 +452,12 @@ server <- function(input, output, session) {
 	  }, server = FALSE)
 	})
 	
-	#On click preview button
+	# When the user selects a sample in the "process data" tab, and presses the
+	# "preview" button. This event creates a 3-dimensional plot of the mass
+	# spectra in the sample. This is the only function that uses metaboAnalystR
+	# and optiLCMS. Might remove since it's fun but not really functional.
 	observeEvent(input$preview, {
+	  # Creation of a progress bar
 	  progress <- shiny::Progress$new()
 	  on.exit(progress$close())
 	  progress$set(message = "Preview", value = 0)
@@ -452,7 +476,7 @@ server <- function(input, output, session) {
 		progress$inc(1/4, detail = "Making MSmap object")
 		M <- MSmap(aa, ms1[rtsel], lowMz=mzlow, highMz=mzhigh, resMz=mzres, aahead, zeroIsNA = TRUE)
 		close(aa)
-		#Render 3d plot
+		# Render 3d plot
 		output$previewplot <- renderUI({
 			open3d()
 			plot3D(M, rgl = TRUE)#xlim = input$chromrange, ylim = input$mzrange, xlab = "Retention time (seconds)", ylab = "M/Z", zlab = "Intensity")
@@ -462,7 +486,7 @@ server <- function(input, output, session) {
 		progress$close()
 	})
 	
-	#Clear plots on tab switch
+	# Clear plots on tab switch DEPRECATED
 	observeEvent(input$tabSwitch, {
 		# output$previewplot <- renderUI({
 		# 	return(NULL)
@@ -478,22 +502,27 @@ server <- function(input, output, session) {
 		# })
 	})
 	
-	#Handelingen als data ingevoerd is ---
+	# This event is responsible for handling data processing. The code below runs
+	# whenever the user submits newly uploaded samples.
 	observeEvent(input$dataupl, {
+	  # Checks if the user submitted a correct overarching name to the samples.
 	  if (nchar(input$sample_description) == 0){
 	    output$upl_completed <- renderText({
 	      "Please input your name."
 	    })
 	    return()
 	  }
+	  # Checks if files are present for uploading.
 		if (nr_files == 0) {
 			output$upl_completed <- renderText({
 				'Please upload a file.'
 			})
 			return()
 		}
+	  # Checks if all samples correctly have labels assigned to them.
 	  invalid_metadata <- FALSE
 	  for (i in 1:nr_files) {
+	    # Removes all characters that are not spaces and or alphanumeric.
 	    metastring <- gsub("[^[:alnum:][:space:]]", "", input[[paste("meta", i, sep = "")]])
 	    if (metastring == "") {
 	      output$upl_completed <- renderText({
@@ -506,24 +535,28 @@ server <- function(input, output, session) {
 	  output$upl_completed <- renderText({
 	    "Files uploading, please be patient...."
 	  })
+	  # Collects the labels or "file_tags"
 	  file_tags <- c()
 	  for (i in 1:nr_files){
 	    file_tags <- c(file_tags, gsub("[^[:alnum:][:space:]]", "", input[[paste("meta", i, sep = "")]]))
 	  }
 		dir <- getwd()
 		dir <- paste(dir, "/massascans", sep = "")
-		#aanmaak metadata object
+		# Creation of metadata object
 		file <- input$msdata
 		time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
-		#progress <- shiny::Progress$new()
-		#on.exit(progress$close())
-		#progress$set(message = "Uploading", value = 0)s
+		# This function is responsible for uploading files to the server and
+		# appending information to the database.
 		run_file_upload <- function(rfuFile, rfuTime, rfuDir, rfuSample_description, rfuDb_usr, rfuD_pwd, rfuSample_table_content, rfuFile_tags){
 		  count <- 0
+		  # Because of a nested future call, multisession and database functions
+		  # are redifined.
 		  plan(multisession)
+		  # Iterates through all uploaded files.
 		  for (fileloc in rfuFile$datapath) {
-		    #progress$inc(1/length(file$datapath), detail = paste("File:", file$name[count + 1]))
 		    upload_file <- function(ufCount, ufFileloc, ufDir, ufTime, ufSample_description, ufFile, ufFile_tag, ufDb_usr, ufDb_pwd, ufSample_table_content){
+		      
+		      # Only insert and send queries are required.
 		      insert_query <- function(tb_name, data){
 		        sqlconn <- dbConnect(
 		          drv = RMySQL::MySQL(),
@@ -549,7 +582,11 @@ server <- function(input, output, session) {
 		        on.exit(dbDisconnect(sqlconn))
 		        dbSendQuery(sqlconn, query)
 		      }
+		      
+		      # Copies the file from a temporary to a persistent directory.
 		      file.copy(ufFileloc, ufDir)
+		      # If the user uploads a .raw file, msconvert docker container is used
+		      # to convert it to .mzXML.
 		      if (grepl('.raw', ufFileloc, fixed=TRUE)) {
 		        system(paste("docker run --rm -v ", ufDir, ":/massascans chambm/pwiz-skyline-i-agree-to-the-vendor-licenses wine msconvert /massascans/", ufCount, ".raw", " --mzXML -o /massascans", sep = "")) #change .raw files to .mzXML
 		        system(paste("rm ", ufDir, "/", ufCount, ".raw", sep = ""))
@@ -558,12 +595,18 @@ server <- function(input, output, session) {
 		      else if (grepl('.mzXML', ufFileloc, fixed=TRUE)) {
 		        filetype <- ".mzXML"
 		      }
+		      # .CDF is not supported; this is here in case it changes.
 		      else if (grepl('.CDF', ufFileloc, fixed=TRUE)) {
 		        filetype <- ".CDF"
 		      }
+		      # If somehow an unsupported file extension was uploaded: removal.
 		      else {
 		        system(paste("rm ", ufFileloc, sep = ""))
 		      }
+		      # Converts the contents of the processed file into a sha224 hash.
+		      # Necessary to prevent duplicate uploads. Linux overwrites the
+		      # equally named files. Also used as a primary key in the sample table
+		      # of the database.
 		      hash <- system(paste("sha224sum ", paste(ufDir, "/", ufCount, filetype, sep = ""), " | awk '{print $1}'", sep = ""), intern=TRUE)
 		      if (hash %in% ufSample_table_content) {
 		        system(paste("rm -f ", ufDir, "/", ufCount, filetype, sep = ""))
@@ -571,25 +614,34 @@ server <- function(input, output, session) {
 		      else {
   	        file.rename(paste(ufDir, "/", ufCount, filetype, sep = ""), paste(ufDir, "/", hash, filetype, sep = ""))
   	        filepath <- toString(paste(ufDir, "/", hash, filetype, sep = ""))
+  	        # Code below is wrapped in a tryCatch in case a hash is already
+  	        # present as a primary key in the sample table.
   	        tryCatch(
   	          {
+  	            # Retrieve information about the specifics of a file.
   	            aa <- openMSfile(filepath)
   	            aai <- instrumentInfo(aa)
   	            test.empty <- header(aa)
+  	            # This removes files with a correct layout but no measured scans
   	            test.empty <- test.empty$lowMZ
   	            on.exit(close(aa))
   	            close(aa)
   	            if (length(test.empty) == 0) {
   	              file.remove(filepath)
   	            }
+  	            # This assigns the correct chromatographic method to the sample.
   	            if (length(test.empty) > 1) {
   	              if (aai$ionisation == "electrospray ionization") {
-  	                chromtype <- 1
+  	                chromtype <- 1 # LCMS
   	              } else {
-  	                chromtype <- 2
+  	                chromtype <- 2 # GCMS
   	              }
+  	              # Saves the sample to a separate ogXCMSset, in order to speed
+  	              # up TIC creation in later steps.
   	              ogXCMSset <- readMSData(filepath, mode = "onDisk")
   	              saveRDS(ogXCMSset, paste(ufDir, "/", hash, ".rds", sep = ""))
+  	              # Creation of a cataframe with corresponding column values
+  	              # of the sample table in the sample table of the database.
   	              todf <- data.frame(
   	                sample_hash = toString(hash),
   	                file_path = toString(filepath),
@@ -606,6 +658,7 @@ server <- function(input, output, session) {
   	            }
   	          },
   	          error = function(cnd){
+  	            # Removes the sample if an error has occurred.
   	            file.remove(filepath)
   	            file.remove(paste(ufDir, "/", hash, ".rds", sep = ""))
   	            system("echo ERROR")
@@ -615,7 +668,7 @@ server <- function(input, output, session) {
   	        )
 		      }
 		    }
-		    #for potential async useage
+		    #for Nested asynchonous function.
 		    future({upload_file(count, fileloc, rfuDir, rfuTime, rfuSample_description, rfuFile$name, rfuFile_tags[count + 1], rfuDb_usr, rfuD_pwd, rfuSample_table_content)}, seed = NULL)
 		    #upload_file(count, fileloc, rfuDir, rfuTime, rfuSample_description, rfuFile$name, rfuFile_tags[count + 1], rfuDb_usr, rfuD_pwd, rfuSample_table_content)
 		    count <- count + 1
@@ -624,14 +677,14 @@ server <- function(input, output, session) {
 		}
 		sample_descr <- toString(input$sample_description)
 		sample_hashes_existing <- sample_table_content[, 1]
+		# The "run_file_upload" function is called within furute, which allows for
+		# parallel processing. Necessary to maintain full application functionality.
 		future({run_file_upload(file, time, dir, sample_descr, db_usr, db_pwd, sample_hashes_existing, file_tags)}, seed = NULL)
-		# run_file_upload(file, time, dir, input$sample_description, db_usr, db_pwd, sample_table_content, file_tags)
 		updateTextInput(session, "sample_description", value = "")
 		shinyjs::alert('Data upload in progress... Check back later!\nWarning: Do not close the current tab!')
-		# session$reload()
 	})
   
-	#Update table to selected datatype
+	# Update table to selected chomatographic method
 	observeEvent(input$datatype, {
 	  output$selected_samples <- DT::renderDataTable({
 	    selsamples <<- sample_table_content[input$uploaded_samples_rows_selected,]
@@ -649,7 +702,7 @@ server <- function(input, output, session) {
 	        }
 	        query <- stringr::str_glue("SELECT file_path, original_file_name, original_XCMSnExp_path FROM sample WHERE ", filequery, ";")
 	        selection <- get_query(query)
-	        #Render TIC(s)
+	        # Render a TIC per sample in the same plotly plot.
 	        minrts <- c()
 	        maxrts <- c()
 	        output$ticplot <- renderPlotly({
@@ -666,6 +719,7 @@ server <- function(input, output, session) {
 	          chrom
 	        })
 	      }
+	      # Removes the plots when not in use.
 	      else{
 	        output$ticplot <- renderPlotly({
 	          return(NULL)
@@ -687,7 +741,7 @@ server <- function(input, output, session) {
 	  }, server = FALSE)
 	})
 	
-	#Updata parameter usage to datatype and preset selection
+	# Update parameter usage to datatype and preset selection
 	observeEvent(input$preset, {
 # 	#Disable all parameter inputs for automatic mode
   	for(app_element in all_params) {
@@ -724,7 +778,7 @@ server <- function(input, output, session) {
   	# }
 	})
 	
-	#Conditionally disable the "Preview spectrum" button
+	# Conditionally disable the "Preview spectrum" button
 	observeEvent(input$selected_samples_rows_selected, ignoreNULL = FALSE, {
 	  output$previewplot <- renderUI({
 	    return(NULL)
@@ -750,7 +804,7 @@ server <- function(input, output, session) {
 	  
 	})
 	
-	#Verandering van parameters naar preset
+	# Change of parameter values to presets. Currently not in use.
 	observeEvent(input$preset, {
 		# if(input$preset == 1) {
 		# 	updateCheckboxInput(session, "p1", value = 0)
@@ -768,12 +822,7 @@ server <- function(input, output, session) {
 		# 	updateCheckboxInput(session, "p3", value = 0) }
 	})
 	
-	#Show relevant parameters for peak method
-	observeEvent(input$peak_method, {
-	  
-	})
-	
-	#Actions when job gets submitted
+	# Actions when job is submitted
 	observeEvent(input$submitJob, {
 	  output$jobval <- renderTable({
 	    validate(need(nchar(input$job_name) != 0, "No job title avaiable"))
@@ -854,9 +903,12 @@ server <- function(input, output, session) {
 	  }
 	})
 	
-	#Function to tweak parameters of a previously processed job
+	# Function to tweak parameters of a previously processed job. Ran if a resub
+	# button was pressed.
 	observeEvent(input$resub1 | input$resub2 | input$resub3 | input$resub4 | input$resub5, ignoreInit =  T, {
 	  job_plan <- NA
+	  # Defining the plan of the job that needs to be run. A job runs all plans
+	  # greater then the job_plan variable.
 	  if (input$resub1 == 1) {
 	    job_plan <- 2
 	  }
@@ -872,7 +924,8 @@ server <- function(input, output, session) {
 	  else if (input$resub5 == 1) {
 	    job_plan <- 6
 	  }
-	  if (is.na(job_plan) == FALSE) {
+	  # If a valid job_plan has been assigned.
+	  if (!is.na(job_plan)) {
 	    job_id <- job_table_content[input$jobs_rows_selected, ]$job_id
 	    params <- c()
 	    used_param_names <- c()
@@ -949,10 +1002,10 @@ server <- function(input, output, session) {
 	  query4 <- stringr::str_glue(paste("SELECT * FROM sample WHERE sample_hash IN (SELECT sample_hash FROM sample_job WHERE job_id = ", job_id, ");", sep = ""))
 	  selection <- get_query(query4)
 	  
-	  query5 <- stringr::str_glue(paste("SELECT peak.peak_id, peak.modcosinesim, mol.mol_name, mol.pubid FROM peak LEFT JOIN mol ON peak.mol_id_modcosinesim = mol.mol_id WHERE job_id = ",
+	  query5 <- stringr::str_glue(paste("SELECT peak.peak_id, peak.modcosinesim, mol.mol_name, mol.pubid, peak.spectrum FROM peak LEFT JOIN mol ON peak.mol_id_modcosinesim = mol.mol_id WHERE job_id = ",
 	                                   job_id, ";", sep = ""))
 	  detected_mols_cos <- get_query(query5)
-	  query6 <- stringr::str_glue(paste("SELECT peak.peak_id, peak.coeff_diff, mol.mol_name, mol.pubid FROM peak LEFT JOIN mol ON peak.mol_id_coeffsim = mol.mol_id WHERE job_id = ",
+	  query6 <- stringr::str_glue(paste("SELECT peak.peak_id, peak.coeff_diff, mol.mol_name, mol.pubid, peak.spectrum FROM peak LEFT JOIN mol ON peak.mol_id_coeffsim = mol.mol_id WHERE job_id = ",
 	                                    job_id, ";", sep = ""))
 	  detected_mols_coeff <- get_query(query6)
 	  
@@ -968,124 +1021,52 @@ server <- function(input, output, session) {
 	  # dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"coeff_diff"] <- detected_mols_coeff$coeff_diff
 	  # Add sample name to dataframe
 	  dfpeaks$sample_name <- NULL
+	  
+	  # Responsible for everything in the model when the user clicks a peak
+	  observeEvent(input$peaktable_rows_selected, {
+	    pspec <- detected_mols_cos[detected_mols_cos$peak_id == rownames(dfpeaks)[input$peaktable_rows_selected],"spectrum"]
+	    # Split the spectrum ([mz]:[intensity]) string into mz and intensity values
+	    # Dissect the string into a vector of mzs and intensities
+	    bins <- strsplit(pspec, " ")
+	    if (!is.null(bins)) {
+	      # Split into two vectors to allow plotting
+	      ints <- c()
+	      mzs <- c()
+	      if (length(bins) != 0) {
+	        for (section in bins[[1]]){
+	          mzs <- c(mzs, as.double(strsplit(section, ":")[[1]][1]))
+	          ints <- c(ints, as.double(strsplit(section, ":")[[1]][2]))
+	        }
+	        pspec <- data.frame(mzs, ints)
+	        colnames(pspec) <- c("Intensity (relative to highest peak)", "Mass (m/z)")
+	        # Allows for downloadign the spectrum to a .txt file.
+	        output$download_spectr <- downloadHandler(
+	          filename = function(){"spectrum.txt"}, 
+	          content = function(file){
+	            writeLines(paste(detected_mols_cos[detected_mols_cos$peak_id == rownames(dfpeaks)[input$peaktable_rows_selected],"spectrum"], collapse = ", "), file)
+	          }
+	        )
+	        # Rendering the modal
+	        showModal(modalDialog(
+	          tagList(
+	            renderPlot({
+	              plot(pspec, type = 'h')
+	              text(x = pspec[pspec[,2] > 10,1], y = pspec[pspec[,2] > 10,2] + 1, round(pspec[pspec[,2] > 10,1], 3), col = 'blue')
+	            }),
+	            downloadButton('download_spectr', "Download spectrum [mz]:[intensity]")
+	          ), easyClose = TRUE
+	        ))
+	      }
+	    }
+	  })
 	  for (sample_index in 1:length(selection$original_file_name)) {
 	    dfpeaks[dfpeaks[,"sample"] == sample_index,"sample_name"] <- selection$original_file_name[sample_index]
 	  }
-	  observeEvent(input$Peak_methodA, ignoreInit =  T, {
-	    peak_options <- c(default_cent, default_massif, default_matchedfilter)[is.na(input$Peak_methodA) + 1]
-	  })
-	  if (is.null(input$Peak_methodA)) {
-	    if (used_parameters$Peak_method == 0) {
-	      peak_options <- tagList(
-	        numericInput("ppmA", label = "ppm", value = used_parameters$ppm),
-	        numericInput("min_peakwidthA", label = "min_peakwidth", value = used_parameters$min_peakwidth),
-	        numericInput("max_peakwidthA", label = "max_peakwidth", value = used_parameters$max_peakwidth),
-	        numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
-	        numericInput("prefilterA", label = "prefilter", value = used_parameters$prefilter),
-	        numericInput("value_of_prefilterA", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
-	        selectInput("mzCenterFunA", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
-	        numericInput("integrateA", label = "integrate", value = used_parameters$integrate),
-	        numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
-	        checkboxInput("fitgaussA", label = "fitgauss", value = used_parameters$fitgauss),
-	        numericInput("noiseA", label = "noise", value = used_parameters$noise),
-	        checkboxInput("verboseColumnsA", label = "verboseColumns", value = used_parameters$verboseColumns)
-	      )
-	    }
-	    else if (used_parameters$Peak_method == 1) {
-	      peak_options <- tagList(
-	        numericInput("ppmA", label = "ppm", value = used_parameters$ppm),
-	        numericInput("min_peakwidthA", label = "min_peakwidth", value = used_parameters$min_peakwidth),
-	        numericInput("max_peakwidthA", label = "max_peakwidth", value = used_parameters$max_peakwidth),
-	        numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
-	        numericInput("prefilterA", label = "prefilter", value = used_parameters$prefilter),
-	        numericInput("value_of_prefilterA", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
-	        selectInput("mzCenterFunA", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
-	        numericInput("integrateA", label = "integrate", value = used_parameters$integrate),
-	        numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
-	        checkboxInput("fitgaussA", label = "fitgauss", value = used_parameters$fitgauss),
-	        numericInput("noiseA", label = "noise", value = used_parameters$noise),
-	        checkboxInput("verboseColumnsA", label = "verboseColumns", value = used_parameters$verboseColumns),
-	        numericInput("criticalValueA", label = "criticalValue", value = used_parameters$criticalValue),
-	        numericInput("consecMissedLimitA", label = "consecMissedLimit", value = used_parameters$consecMissedLimit),
-	        numericInput("unionsA", label = "unions", value = used_parameters$unions),
-	        numericInput("checkBackA", label = "checkBack", value = used_parameters$checkBack),
-	        checkboxInput("withWaveA", label = "withWave", value = used_parameters$withWave)
-	      )
-	    }
-	    else if (used_parameters$Peak_method == 2) {
-	      peak_options <- tagList(
-	        numericInput("binSizeA", label = "binSize", value = used_parameters$binSize),
-	        selectInput("imputeA", label = "impute", choices = list("none" = 0, "lin" = 1, "linbase" = 2, "intlin" = 3, "imputeLinInterpol" = 4), selected = used_parameters$impute),
-	        # numericInput("baseValue", label = "baseValue", 5),
-	        # numericInput("distance", label = "distance", 5),
-	        numericInput("fwhmA", label = "fwhm", value = used_parameters$fwhm),
-	        numericInput("sigmaA", label = "sigma", value = used_parameters$sigma),
-	        numericInput("maxA", label = "max", value = used_parameters$max),
-	        numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
-	        numericInput("stepsA", label = "steps", value = used_parameters$steps),
-	        numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
-	        checkboxInput("indexA", label = "index", value = used_parameters$index)
-	      )
-	    }
-	  } else {
-	    if (used_parameters$Peak_method == 0 & input$Peak_methodA == 0) {
-	      peak_options <- tagList(
-	        numericInput("ppmA", label = "ppm", value = used_parameters$ppm),
-	        numericInput("min_peakwidthA", label = "min_peakwidth", value = used_parameters$min_peakwidth),
-	        numericInput("max_peakwidthA", label = "max_peakwidth", value = used_parameters$max_peakwidth),
-	        numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
-	        numericInput("prefilterA", label = "prefilter", value = used_parameters$prefilter),
-	        numericInput("value_of_prefilterA", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
-	        selectInput("mzCenterFunA", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
-	        numericInput("integrateA", label = "integrate", value = used_parameters$integrate),
-	        numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
-	        checkboxInput("fitgaussA", label = "fitgauss", value = used_parameters$fitgauss),
-	        numericInput("noiseA", label = "noise", value = used_parameters$noise),
-	        checkboxInput("verboseColumnsA", label = "verboseColumns", value = used_parameters$verboseColumns)
-	      )
-	    }
-	    else if (used_parameters$Peak_method == 1 & input$Peak_methodA == 1) {
-	      peak_options <- tagList(
-	        numericInput("ppmA", label = "ppm", value = used_parameters$ppm),
-	        numericInput("min_peakwidthA", label = "min_peakwidth", value = used_parameters$min_peakwidth),
-	        numericInput("max_peakwidthA", label = "max_peakwidth", value = used_parameters$max_peakwidth),
-	        numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
-	        numericInput("prefilterA", label = "prefilter", value = used_parameters$prefilter),
-	        numericInput("value_of_prefilterA", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
-	        selectInput("mzCenterFunA", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
-	        numericInput("integrateA", label = "integrate", value = used_parameters$integrate),
-	        numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
-	        checkboxInput("fitgaussA", label = "fitgauss", value = used_parameters$fitgauss),
-	        numericInput("noiseA", label = "noise", value = used_parameters$noise),
-	        checkboxInput("verboseColumnsA", label = "verboseColumns", value = used_parameters$verboseColumns),
-	        numericInput("criticalValueA", label = "criticalValue", value = used_parameters$criticalValue),
-	        numericInput("consecMissedLimitA", label = "consecMissedLimit", value = used_parameters$consecMissedLimit),
-	        numericInput("unionsA", label = "unions", value = used_parameters$unions),
-	        numericInput("checkBackA", label = "checkBack", value = used_parameters$checkBack),
-	        checkboxInput("withWaveA", label = "withWave", value = used_parameters$withWave)
-	      )
-	    }
-	    else if (used_parameters$Peak_method == 2 & input$Peak_methodA == 2) {
-	      peak_options <- tagList(
-	        numericInput("binSizeA", label = "binSize", value = used_parameters$binSize),
-	        selectInput("imputeA", label = "impute", choices = list("none" = 0, "lin" = 1, "linbase" = 2, "intlin" = 3, "imputeLinInterpol" = 4), selected = used_parameters$impute),
-	        # numericInput("baseValue", label = "baseValue", 5),
-	        # numericInput("distance", label = "distance", 5),
-	        numericInput("fwhmA", label = "fwhm", value = used_parameters$fwhm),
-	        numericInput("sigmaA", label = "sigma", value = used_parameters$sigma),
-	        numericInput("maxA", label = "max", value = used_parameters$max),
-	        numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
-	        numericInput("stepsA", label = "steps", value = used_parameters$steps),
-	        numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
-	        checkboxInput("indexA", label = "index", value = used_parameters$index)
-	      )
-	    }
-	    else if (used_parameters$Peak_method == 3 & input$Peak_methodA == 3) {
-	      peak_options <- tagList(
-	        shiny::p("Not yet functional")
-	      )
-	    }
-	  }
+	  output$peaktable <- DT::renderDataTable({
+	    DT::datatable(dfpeaks, extensions = "Buttons", selection = 'single',
+	                  rownames= TRUE, options = list(scrollX = TRUE, autoWidth = TRUE, dom = 'Bfrtip',
+	                                                 buttons = c('csv')))
+	  }, server = FALSE)
 	  
 	  observeEvent(input$Ref_methodA, ignoreInit =  T, {
 	    ref_options <- c(default_mnp, default_fi)[is.na(input$Ref_methodA) + 1]
@@ -1264,14 +1245,14 @@ server <- function(input, output, session) {
   			         ),
   			fluidRow(style='max-width:100%;padding:10px;',
   			         column(6,
-  			                renderPlotly({
-  			                  stacked_mols <- plot_ly(x = NULL, y = NULL, type = 'bar', name = 'SF Zoo')
-  			                  for (sample in 1:length(unique(chromPeaks(xset)[,"sample"]))) {
-  			                    stacked_mols <- stacked_mols %>% add_trace(stacked_samps[[sample]], x = stacked_samps[[sample]]$compound, y = stacked_samps[[sample]]$area, name =  selection$original_file_name[sample])
-  			                  }
-  			                  stacked_mols <- stacked_mols %>% layout(yaxis = list(title = 'Log10 of Detected Compounds AUC'), barmode = 'stack')
-  			                  stacked_mols
-  			                })
+  			                # renderPlotly({
+  			                #   stacked_mols <- plot_ly(x = NULL, y = NULL, type = 'bar', name = 'SF Zoo')
+  			                #   for (sample in 1:length(unique(chromPeaks(xset)[,"sample"]))) {
+  			                #     stacked_mols <- stacked_mols %>% add_trace(stacked_samps[[sample]], x = stacked_samps[[sample]]$compound, y = stacked_samps[[sample]]$area, name =  selection$original_file_name[sample])
+  			                #   }
+  			                #   stacked_mols <- stacked_mols %>% layout(yaxis = list(title = 'Log10 of Detected Compounds AUC'), barmode = 'stack')
+  			                #   stacked_mols
+  			                # })
   			         ),
   			         column(6,
   			                div(DT::renderDataTable({
@@ -1285,14 +1266,17 @@ server <- function(input, output, session) {
   			fluidRow(style='max-width:100%;padding:10px;',
   			         column(6,
   			                renderPlotly({
+  			                  # Take the log2 of the feature values
   			                  ft_fv <- log2(featureValues(xset, filled = TRUE))
+  			                  # Normalize the dataset using scale
   			                  ft_fv <- scale(featureValues(xset), scale = TRUE)
   			                  pc <- prcomp(t(na.omit(ft_fv)), center = TRUE)
-  			                  pca <- plot_ly(x = NULL, y = NULL, z = NULL, type = "scatter3d") %>% layout(title  = "PCA", scene = list(xaxis = list(title = "PC1"), yaxis = list(title = "PC2"), zaxis = list(title = "PC3")))
+  			                  print(pc)
+  			                  pca <- plot_ly(x = NULL, y = NULL, type = "scatter") %>% layout(title  = "PCA", scene = list(xaxis = list(title = "PC1"), yaxis = list(title = "PC2")))
   			                  #hashes <- substr(names(pc$x[,1]), 0, 56)
   			                  meta_selection <- selection$metadata
   			                  for (metda in unique(meta_selection)){
-  			                    pca <- pca %>% add_trace(y = pc$x[,2][meta_selection == metda], x = pc$x[,1][meta_selection == metda], z = pc$x[,3][meta_selection == metda], name = paste(metda), mode = 'markers', hovertext = selection$original_file_name[meta_selection == metda], hoverinfo = "text")
+  			                    pca <- pca %>% add_trace(y = pc$x[,2][meta_selection == metda], x = pc$x[,1][meta_selection == metda], name = paste(metda), mode = 'markers', hovertext = selection$original_file_name[meta_selection == metda], hoverinfo = "text", marker = list(size = 10))
   			                  }
   			                  pca
   			                })
@@ -1307,8 +1291,10 @@ server <- function(input, output, session) {
   			                  #aa <- readRDS(selection$original_XCMSnExp_path[i], refhook = NULL)
   			                  for (i in round(input$sample_nr_peaks)){
   			                    aa <- filterFile(xset, i)
-  			                    #Get ids of peaks in sample
-  			                    tp <- rownames(chromPeaks(aa))
+  			                    # Omit filled peaks
+  			                    is_filled <-chromPeakData(aa)[,2]
+  			                    # Get ids of peaks in sample
+  			                    tp <- rownames(chromPeaks(aa))[!is_filled]
   			                    for (peak in 1:length(tp)) {
   			                      p <- unique(tt[tt[, "peak_id"] == tp[peak], c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
   			                      xp <- p[,"rtime"]
@@ -1335,32 +1321,47 @@ server <- function(input, output, session) {
   			),
   			fluidRow(style='max-width:100%;padding:10px;',
   			         column(12,
+  			                # Group correlation selection
+  			                renderUI({
+  			                    checkboxGroupInput(inputId = "matrixselect", label = "Select groups to alter view of heatmap", choices <- unique(selection$metadata), selected = unique(selection$metadata))
+  			                }),
   			                ### HEATMAP
   			                renderUI({
-  			                  heatframe <- data.frame(matrix(nrow = length(unique(molmatches$compound)), ncol = length(selection$original_file_name)))
-  			                  rownames(heatframe) <- unique(molmatches$compound)
+  			                  heatframe <- featureValues(xset, filled = TRUE)
+  			                  # heatframe <- data.frame(matrix(nrow = length(unique(molmatches$compound)), ncol = length(selection$original_file_name)))
+  			                  # rownames(heatframe) <- unique(molmatches$compound)
   			                  colnames(heatframe) <- selection$original_file_name
-  			                  for (df in stacked_samps){
-  			                    agg <- aggregate(. ~ compound, data=df[,c(1,3)], FUN=sum)
-  			                    heatframe[agg$compound, selection$original_file_name[df$sample[1]]] <- agg$area
-  			                  }
+  			                  heatframe <- heatframe[,selection$metadata %in% input$matrixselect]
+  			                  # for (df in stacked_samps){
+  			                  #   agg <- aggregate(. ~ compound, data=df[,c(1,3)], FUN=sum)
+  			                  #   heatframe[agg$compound, selection$original_file_name[df$sample[1]]] <- agg$area
+  			                  # }
   			                  heatframe[is.na(heatframe)] <- 0
   			                  heatframe[is.na(heatframe)] <- 0
   			                  heatframe <- heatframe[!is.infinite(rowSums(heatframe)),]
-  			                  heatframe <- heatframe[rownames(heatframe) != "Unknown Compound",]
-  			                  heatframe <- heatframe[,sort(colnames(heatframe))]
-  			                  heatmaply(heatframe)
-  			                })
+  			                  # heatframe <- heatframe[rownames(heatframe) != "Unknown Compound",]
+  			                  heatframe <<- heatframe[,sort(colnames(heatframe))]
+  			                  output$download_featvals <- downloadHandler(
+  			                    filename = paste("featureValues", job_id, ".csv", sep = ""),
+  			                    content = function(file) {
+  			                      write.csv(heatframe, file, row.names = TRUE)
+  			                    }
+  			                  )
+  			                  heatmaply(heatframe, xlab = "Samples", ylab = "Features", main = "Clustered heatmap of features between samples")
+  			                }),
+  			                downloadButton("download_featvals", "Download feature values")
   			         )
   			),
-  	    fluidRow(style='max-width:100%;padding:10px;',
-  	             column(6,
+	      fluidRow(style='max-width:100%;padding:10px;font-size:75%;', column(12, 
+	                                                                          renderUI({
+	                                                                            selection$metadata %in% input$matrixselect
+	                                                                            heatmaply(cor(na.omit(heatframe)), main = "Pearson correlation between sample features")
+	                                                                          })
+	                                                                          )),
+  	    fluidRow(style='max-width:100%;padding:10px;font-size:75%;',
+  	             column(6, 
   	                    p("Detected peak specifics:"),
-  	                    div(DT::renderDataTable({
-  	                      DT::datatable(dfpeaks, extensions = "Buttons", selection = 'none',
-  	                                    rownames= TRUE, options = list(scrollX = TRUE, autoWidth = TRUE, dom = 'Bfrtip',
-  	                                                                   buttons = c('csv')))
-  	                    }, server = FALSE), style = "font-size: 75%;")
+  	                    DTOutput('peaktable')
   	             ),
   	             column(6,
   	                    p("Detected features:"),
@@ -1368,7 +1369,7 @@ server <- function(input, output, session) {
   	                      DT::datatable(as.data.frame(featureDefinitions(xset)), extensions = "Buttons", selection = 'none',
   	                                    rownames= TRUE, options = list(scrollX = TRUE, autoWidth = TRUE, dom = 'Bfrtip',
   	                                                                   buttons = c('csv')))
-  	                    }, server = FALSE), style = "font-size: 75%;")
+  	                    }, server = FALSE))
   	             )
   	    ),
   	    fluidRow(style='max-width:100%;padding:10px;',
@@ -1376,8 +1377,127 @@ server <- function(input, output, session) {
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("1. Detection"),
-  	                    selectInput("Peak_methodA", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2, "n3" = 3), selected = used_parameters$Peak_method),
-                      renderUI(peak_options),
+  	                    selectInput("Peak_methodA", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2, "relsqdiff" = 3), selected = used_parameters$Peak_method),
+                      renderUI({
+                        observeEvent(input$Peak_methodA, ignoreInit =  F, {
+                          peak_options <- c(default_cent, default_massif, default_matchedfilter, default_relsqdiff)[is.na(input$Peak_methodA) + 1]
+                        })
+                        if (is.null(input$Peak_methodA)) {
+                          if (used_parameters$Peak_method == 0) {
+                            peak_options <- tagList(
+                              numericInput("ppmA", label = "ppm", value = used_parameters$ppm),
+                              numericInput("min_peakwidthA", label = "min_peakwidth", value = used_parameters$min_peakwidth),
+                              numericInput("max_peakwidthA", label = "max_peakwidth", value = used_parameters$max_peakwidth),
+                              numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
+                              numericInput("prefilterA", label = "prefilter", value = used_parameters$prefilter),
+                              numericInput("value_of_prefilterA", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
+                              selectInput("mzCenterFunA", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
+                              numericInput("integrateA", label = "integrate", value = used_parameters$integrate),
+                              numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
+                              checkboxInput("fitgaussA", label = "fitgauss", value = used_parameters$fitgauss),
+                              numericInput("noiseA", label = "noise", value = used_parameters$noise),
+                              checkboxInput("verboseColumnsA", label = "verboseColumns", value = used_parameters$verboseColumns)
+                            )
+                          }
+                          else if (used_parameters$Peak_method == 1) {
+                            peak_options <- tagList(
+                              numericInput("ppmA", label = "ppm", value = used_parameters$ppm),
+                              numericInput("min_peakwidthA", label = "min_peakwidth", value = used_parameters$min_peakwidth),
+                              numericInput("max_peakwidthA", label = "max_peakwidth", value = used_parameters$max_peakwidth),
+                              numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
+                              numericInput("prefilterA", label = "prefilter", value = used_parameters$prefilter),
+                              numericInput("value_of_prefilterA", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
+                              selectInput("mzCenterFunA", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
+                              numericInput("integrateA", label = "integrate", value = used_parameters$integrate),
+                              numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
+                              checkboxInput("fitgaussA", label = "fitgauss", value = used_parameters$fitgauss),
+                              numericInput("noiseA", label = "noise", value = used_parameters$noise),
+                              checkboxInput("verboseColumnsA", label = "verboseColumns", value = used_parameters$verboseColumns),
+                              numericInput("criticalValueA", label = "criticalValue", value = used_parameters$criticalValue),
+                              numericInput("consecMissedLimitA", label = "consecMissedLimit", value = used_parameters$consecMissedLimit),
+                              numericInput("unionsA", label = "unions", value = used_parameters$unions),
+                              numericInput("checkBackA", label = "checkBack", value = used_parameters$checkBack),
+                              checkboxInput("withWaveA", label = "withWave", value = used_parameters$withWave)
+                            )
+                          }
+                          else if (used_parameters$Peak_method == 2) {
+                            peak_options <- tagList(
+                              numericInput("binSizeA", label = "binSize", value = used_parameters$binSize),
+                              selectInput("imputeA", label = "impute", choices = list("none" = 0, "lin" = 1, "linbase" = 2, "intlin" = 3, "imputeLinInterpol" = 4), selected = used_parameters$impute),
+                              # numericInput("baseValue", label = "baseValue", 5),
+                              # numericInput("distance", label = "distance", 5),
+                              numericInput("fwhmA", label = "fwhm", value = used_parameters$fwhm),
+                              numericInput("sigmaA", label = "sigma", value = used_parameters$sigma),
+                              numericInput("maxA", label = "max", value = used_parameters$max),
+                              numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
+                              numericInput("stepsA", label = "steps", value = used_parameters$steps),
+                              numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
+                              checkboxInput("indexA", label = "index", value = used_parameters$index)
+                            )
+                          }
+                        } else {
+                          if (used_parameters$Peak_method == 0 & input$Peak_methodA == 0) {
+                            peak_options <- tagList(
+                              numericInput("ppmA", label = "ppm", value = used_parameters$ppm),
+                              numericInput("min_peakwidthA", label = "min_peakwidth", value = used_parameters$min_peakwidth),
+                              numericInput("max_peakwidthA", label = "max_peakwidth", value = used_parameters$max_peakwidth),
+                              numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
+                              numericInput("prefilterA", label = "prefilter", value = used_parameters$prefilter),
+                              numericInput("value_of_prefilterA", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
+                              selectInput("mzCenterFunA", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
+                              numericInput("integrateA", label = "integrate", value = used_parameters$integrate),
+                              numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
+                              checkboxInput("fitgaussA", label = "fitgauss", value = used_parameters$fitgauss),
+                              numericInput("noiseA", label = "noise", value = used_parameters$noise),
+                              checkboxInput("verboseColumnsA", label = "verboseColumns", value = used_parameters$verboseColumns)
+                            )
+                          }
+                          else if (used_parameters$Peak_method == 1 & input$Peak_methodA == 1) {
+                            peak_options <- tagList(
+                              numericInput("ppmA", label = "ppm", value = used_parameters$ppm),
+                              numericInput("min_peakwidthA", label = "min_peakwidth", value = used_parameters$min_peakwidth),
+                              numericInput("max_peakwidthA", label = "max_peakwidth", value = used_parameters$max_peakwidth),
+                              numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
+                              numericInput("prefilterA", label = "prefilter", value = used_parameters$prefilter),
+                              numericInput("value_of_prefilterA", label = "value_of_prefilter", value = used_parameters$value_of_prefilter),
+                              selectInput("mzCenterFunA", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = used_parameters$mzCenterFun),
+                              numericInput("integrateA", label = "integrate", value = used_parameters$integrate),
+                              numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
+                              checkboxInput("fitgaussA", label = "fitgauss", value = used_parameters$fitgauss),
+                              numericInput("noiseA", label = "noise", value = used_parameters$noise),
+                              checkboxInput("verboseColumnsA", label = "verboseColumns", value = used_parameters$verboseColumns),
+                              numericInput("criticalValueA", label = "criticalValue", value = used_parameters$criticalValue),
+                              numericInput("consecMissedLimitA", label = "consecMissedLimit", value = used_parameters$consecMissedLimit),
+                              numericInput("unionsA", label = "unions", value = used_parameters$unions),
+                              numericInput("checkBackA", label = "checkBack", value = used_parameters$checkBack),
+                              checkboxInput("withWaveA", label = "withWave", value = used_parameters$withWave)
+                            )
+                          }
+                          else if (used_parameters$Peak_method == 2 & input$Peak_methodA == 2) {
+                            peak_options <- tagList(
+                              numericInput("binSizeA", label = "binSize", value = used_parameters$binSize),
+                              selectInput("imputeA", label = "impute", choices = list("none" = 0, "lin" = 1, "linbase" = 2, "intlin" = 3, "imputeLinInterpol" = 4), selected = used_parameters$impute),
+                              # numericInput("baseValue", label = "baseValue", 5),
+                              # numericInput("distance", label = "distance", 5),
+                              numericInput("fwhmA", label = "fwhm", value = used_parameters$fwhm),
+                              numericInput("sigmaA", label = "sigma", value = used_parameters$sigma),
+                              numericInput("maxA", label = "max", value = used_parameters$max),
+                              numericInput("snthreshA", label = "snthresh", value = used_parameters$snthresh),
+                              numericInput("stepsA", label = "steps", value = used_parameters$steps),
+                              numericInput("mzdiffA", label = "mzdiff", value = used_parameters$mzdiff),
+                              checkboxInput("indexA", label = "index", value = used_parameters$index)
+                            )
+                          }
+                          else if (used_parameters$Peak_method == 3 & input$Peak_methodA == 3) {
+                            peak_options <- tagList(
+                              numericInput("noise", label = "noise", used_parameters$noise),
+                              numericInput("rsd_threshold", "threshold", used_parameters$rsd_threshold),
+                              numericInput("simthresh", "simthresh", used_parameters$simthresh)
+                            )
+                          }
+                        }
+                        peak_options
+                      }),
                       actionButton("resub1", label = "\n Rerun")
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
@@ -1563,7 +1683,7 @@ server <- function(input, output, session) {
           }
           ## New method for peak detection, square difference
           else if (as.integer(def_params$Peak_method) == 3){
-            def_params$ppm <- 20 # Necessary for other steps!
+            def_params$ppm <- 40 # Necessary for other steps!
             xset <- as(xset, "XCMSnExp")
             for (sampleN in 1:length(files)) {
               raw_data <- readMSData(files = files[sampleN], pdata = new("NAnnotatedDataFrame"), mode = "onDisk")
@@ -1797,7 +1917,8 @@ server <- function(input, output, session) {
           for (i in 1:length(files)) {
             # Split the xset into a single file.
             aa <- filterFile(xset, i)
-            tp <- rownames(chromPeaks(aa))
+            is_filled <-chromPeakData(aa)[,2]
+            tp <- rownames(chromPeaks(aa))[!is_filled]
             # Take various columns from the tt variable.
             p <- unique(tt[tt[, "peak_id"] %in% tp, c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
             # Loop through each peak detected in a single file in order to retrieve information
@@ -1807,6 +1928,9 @@ server <- function(input, output, session) {
               p <- unique(tt[tt[, "peak_id"] == tp[peak], c("peak_id", "scanIndex", "rtime", "totIonCurrent")])
               if (nrow(p) >= 1) {
                 apex <- p[order(p[,"totIonCurrent"], decreasing = TRUE ),][1,] #Scan number of peak apex
+                if (apex[,"scanIndex"] > length(annot_spectra)) {
+                  next
+                }
                 apexspectra <- peaksData(annot_spectra[apex[,"scanIndex"]])[[1]]
                 # Subtract noise from intensities
                 apexspectra[,2] <- apexspectra[,2] - as.double(def_params$noise)
@@ -1828,9 +1952,6 @@ server <- function(input, output, session) {
                   spectrum_formatted <- c(spectrum_formatted, paste(pspec[specrow,], collapse = ':'))
                 }
                 spectrum_formatted <- paste(spectrum_formatted, collapse = " ")
-                # Calculate the relative mass !DEPRECATED!
-                # rel_mass <- sum(apexspectra[,1]*apexspectra[,2])/sum(apexspectra[,2])
-                
                 # Molecule annotation !DEPRECATED! NOT MY RESPONSIBILITY, FRAMEWORK IS HERE
                 # Splash filtering and modified cosine similarity classification: METHOD 1
                 mol_annot_splash <- stringr::str_glue(paste("SELECT * FROM mol WHERE type = '", chromtype, "' AND (splash LIKE '%", search_splash, "%');", sep = ""))
@@ -1854,20 +1975,44 @@ server <- function(input, output, session) {
                     scan2 <- data.frame(mzs, ints)
 
                     # minlength <- min(nrow(scan1), nrow(scan2))
-                    x <- scan1[,1] * ((scan1[,2] / sum(scan1[,2])) * 100)
-                    y <- scan2[,1] * ((scan2[,2] / sum(scan2[,2])) * 100)
-                    x <- c(x, rep(0, abs(length(y) - length(x))))
-                    y <- c(y, rep(0, abs(length(x) - length(y))))
-                    x <- x + 1
-                    y <- y + 1
-                    # Calculate the cosine similarity between peak and compound
-                    sim <- 999*(sum(sqrt(x) * sqrt(y))^2)/(sum(x)*sum(y))
+                    x <- ((scan1[,2] / max(scan1[,2])) * 100)
+                    y <- ((scan2[,2] / max(scan2[,2])) * 100)
+                    # This will align the relative abundances of m/z bins by
+                    # maximum value, which is always 100.
+                    # Example:
+                    # x = m m m M m m
+                    # y = m m M m
+                    # --
+                    # x = m m m M m m
+                    # y = 0 m m M m 0
+                    if (!any(is.na(x)) & !any(is.na(y))){
+                      while (which.max(x) != which.max(y)) {
+                        max_indexes <- c(which.max(x), which.max(y))
+                        min_max <- which.min(max_indexes)
+                        if (min_max == 1) {
+                          x <- c(0, x)
+                        }
+                        else if (min_max == 2) {
+                          y <- c(0, y)
+                        }
+                      }
+                      x <- c(x, rep(0, abs(length(y) - length(x))))
+                      y <- c(y, rep(0, abs(length(x) - length(y))))
+                      # + 1 to remove 0 values and keep ratio's similar
+                      x <- x + 1
+                      y <- y + 1
+                      # Calculate the cosine similarity between peak and compound
+                      sim <- 999*(sum(sqrt(x) * sqrt(y))^2)/(sum(x)*sum(y))
+                    }
+                    else {
+                      sim <- 0
+                    }
                     mol_annot_splash[mspectr,"sim"] <- sim
                   }
                   highest_cosim <- mol_annot_splash[order(mol_annot_splash$sim, decreasing = TRUE),][1,]
                   highest_cosim_mol <- highest_cosim$mol_id
                   highest_cosim <- highest_cosim$sim
-                  if (highest_cosim < 800) { # If highest is below threshold
+                  if (highest_cosim < 900) { # If highest is below threshold
                     highest_cosim_mol <- "NULL"
                     highest_cosim <- "NULL"
                   }
