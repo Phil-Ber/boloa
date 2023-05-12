@@ -1,4 +1,11 @@
 #/usr/bin/env python3
+'''
+This script is responsible for the creation of the application database.
+It is necessary to run this script's functions at least once in order to make
+the application functional. Comment out tables which do not require to be reset.
+Each time this script is run, the contents of tables are deleted.
+'''
+
 import mysql.connector
 import json
 import numpy as np
@@ -11,6 +18,9 @@ with open(".dbpw", "r") as f:
 db_name = "boloa"
 
 try:
+  '''
+  Try to connect to the database.
+  '''
 	mydb = mysql.connector.connect(
 		host=db_host,
 		user=db_user,
@@ -19,6 +29,9 @@ try:
 	)
 	cur = mydb.cursor()
 except:
+  '''
+  If the database does not exist; create the database.
+  '''
 	mydb = mysql.connector.connect(
                 host=db_host,
                 user=db_user,
@@ -28,6 +41,10 @@ except:
 	cur.execute("CREATE DATABASE boloa")
 
 def make_sample():
+  '''
+  This function is responsible to create the table which will contain
+  information about the samples which have been uploaded.
+  '''
 	cur.execute("DROP TABLE IF EXISTS sample;")
 	cur.execute("CREATE TABLE sample ("
 			"sample_hash VARCHAR(100) PRIMARY KEY, "
@@ -44,20 +61,27 @@ def make_sample():
 
 
 def make_job():
+  '''
+  This function is responsible to create the table which will contain
+  information about the jobs which have been created by various users.
+  '''
 	cur.execute("DROP TABLE IF EXISTS job;")
 	cur.execute("CREATE TABLE job ("
 		"job_id INT AUTO_INCREMENT PRIMARY KEY, "
-		"job_status VARCHAR(40), " #CHANGE 40
+		"job_status VARCHAR(40), "
 		"start_time DATETIME, "
-		"end_time DATETIME, " #NEW
+		"end_time DATETIME, "
 		"job_name VARCHAR(100) "
 		");"
 	)
 	print("Job table created...")
 
 def make_parameter():
+  '''
+  This function is responsible store parameters in relation to the job table.
+  '''
 	cur.execute("DROP TABLE IF EXISTS parameter;")
-	cur.execute("CREATE TABLE parameter (" ## VOEG NOG rsd_threshold toe!!
+	cur.execute("CREATE TABLE parameter ("
 		"job_id INT PRIMARY KEY, "
 		"sample_type DOUBLE, "
 		"Peak_method TINYINT, "
@@ -139,6 +163,9 @@ def make_parameter():
 	print("Parameter table created...")
 	
 def make_processed_sample():
+  '''
+  This function is responsible to store the paths to the processed samples.
+  '''
 	cur.execute("DROP TABLE IF EXISTS processed_sample;")
 	cur.execute("CREATE TABLE processed_sample ("
       "job_id INT PRIMARY KEY, "
@@ -150,6 +177,10 @@ def make_processed_sample():
 	print("Processed sample table created...")
 
 def make_sample_job():
+  '''
+  This function is responsible to create a junction table between the job and
+  sample table.
+  '''
   cur.execute("DROP TABLE IF EXISTS sample_job;")
   cur.execute("CREATE TABLE sample_job ("
       "job_id INT, "
@@ -163,6 +194,10 @@ def make_sample_job():
   print("Sample job table created...")
 
 def make_peak():
+  '''
+  This creates the table that will contain the information about peaks which
+  have been detected and processed by the application.
+  '''
   cur.execute("DROP TABLE IF EXISTS peak;")
   cur.execute(
     "CREATE TABLE peak ("
@@ -194,6 +229,12 @@ def make_peak():
   print("Peak table created...")
 
 def make_mol():
+  '''
+  This function creates the molecule table. This table will be filled when
+  this function called. In order to fill this table, the path to GCMS and LCMS
+  MoNA files is needed. These files are subsequently parsed and relevant
+  information is stored inside the molecule table.
+  '''
   cur.execute("DROP TABLE IF EXISTS mol;")
   cur.execute(
     "CREATE TABLE mol ("
@@ -208,11 +249,11 @@ def make_mol():
     ");"  
   )
   print("Molecule table created... Now filling mol, please be patient...")
-  # VOEG COR TUSSEN MASSA EN INTENSITEIT TOE
-  for chrom_method in ["GC", "LC"]:
+  for chrom_method in ["GC", "LC"]: # Needed for both GC and LCMS files
     f = open(f'annot_data/MoNA-export-{chrom_method}-MS_Spectra.json')
     data = json.load(f)
     f.close()
+    # For every compound inside the file: retrieve information
     for i in range(len(data)):
       splash = data[i]["splash"]["splash"]
       try:
@@ -229,14 +270,9 @@ def make_mol():
         pubid
       except:
         pubid = "N/A"
-      # Spectra correlations
       spectrum = data[i]["spectrum"]
-      # # Create a temporary file to store spectrum contents
-      # tmpfile = open("dbtmp", "w")
-      # tmpfile.write(spectrum)
-      # tmpfile.close()
-      # result = subprocess.run(['Rscript', 'coeffcalc.R'], stdout=subprocess.PIPE)
-      # coeff = result.stdout.decode('utf-8').split("\n")[2]
+      # Parse the spectrum in order to calculate a coefficient between
+      # m/z and intensity. Might be used in a new annotation method.
       s = spectrum.split(" ")
       s = [bn.split(':') for bn in s]
       x = np.array([float(ms[0]) for ms in s])
@@ -244,13 +280,10 @@ def make_mol():
       coeff = np.dot(x, y)/(np.linalg.norm(x) * np.linalg.norm(y))
       if coeff == "NA":
         coeff = 0
-      # corr = float(np.corrcoef(masses, intensities)[0,1])
-      # if str(corr) == 'nan':
-      #   corr = 0.0
+      # Store all the relevant variables inside the database.
       cur.execute(f"INSERT INTO mol (splash, mol_name, mass, pubid, type, coeff, spectrum) VALUES "
           f"('{splash}', '{mol_name}', '{mass}', '{pubid}', '{chrom_method}', '{coeff}', '{spectrum}');")
       del pubid
-      #os.remove("dbtmp")
   print("Molecule table filled...")
 
 cur.execute("SET GLOBAL local_infile=1;")
@@ -260,11 +293,11 @@ cur.execute("SET FOREIGN_KEY_CHECKS=0;")
 # os.system(bash_remove)
 
 ### Comment out tables where drops are unwanted.
-# make_sample()
-# make_parameter()
-# make_job()
-# make_processed_sample()
-# make_sample_job()
+# make_sample() # Warning: Will remove samples from database, requires manual reuploading
+make_parameter()
+make_job()
+make_processed_sample()
+make_sample_job()
 # make_mol() # Warning: The creation and subsequent filling of this table takes a long time
 make_peak()
 cur.execute("SET FOREIGN_KEY_CHECKS=1;")

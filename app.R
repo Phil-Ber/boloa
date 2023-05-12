@@ -161,7 +161,6 @@ ui <- fillPage(
 						selectInput("preset", label = "Parameter presets", choices = list("None" = 0, "LC-MS" = 1, "GC-MS" = 2, "Automatic (centWave only)" = 3)),
 						textInput("job_name", label = "Job name"),
 						actionButton("submitJob", "Submit job", width = 180, icon=icon("play")),
-						checkboxInput("debug", label = "Debug mode", 0),
 						tableOutput("jobval")
 					),
 					column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
@@ -222,18 +221,18 @@ server <- function(input, output, session) {
   )
   
   default_cent <- tagList(
-    numericInput("ppm", label = "ppm", 74.77602),
-    numericInput("min_peakwidth", label = "min_peakwidth", 3.727111),
-    numericInput("max_peakwidth", label = "max_peakwidth", 29.69969),
-    numericInput("snthresh", label = "snthresh", 175.7889),
-    numericInput("prefilter", label = "prefilter", 15.51382),
-    numericInput("value_of_prefilter", label = "value_of_prefilter", 3523.923),
-    selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = 0),
+    numericInput("ppm", label = "ppm", 40.24726),
+    numericInput("min_peakwidth", label = "min_peakwidth", 7.179200),
+    numericInput("max_peakwidth", label = "max_peakwidth", 56.20481),
+    numericInput("snthresh", label = "snthresh", 49.03500),
+    numericInput("prefilter", label = "prefilter", 2),
+    numericInput("value_of_prefilter", label = "value_of_prefilter", 113.6439),
+    selectInput("mzCenterFun", label = "mzCenterFun", choices = list("wMean" = 0, "mean" = 1, "apex" = 2, "wMeanApex3" = 3, "meanApex3" = 4), selected = 3),
     numericInput("integrate", label = "integrate", 1),
-    numericInput("mzdiff", label = "mzdiff", -1.305187),
-    checkboxInput("fitgauss", label = "fitgauss", 1),
-    numericInput("noise", label = "noise", 102536.0),
-    checkboxInput("verboseColumns", label = "verboseColumns", 1)
+    numericInput("mzdiff", label = "mzdiff", 0.033627882),
+    checkboxInput("fitgauss", label = "fitgauss", 0),
+    numericInput("noise", label = "noise", 5046.248),
+    checkboxInput("verboseColumns", label = "verboseColumns", 0)
   )
   default_massif <- tagList(
     numericInput("ppm", label = "ppm", 74.77602),
@@ -429,7 +428,7 @@ server <- function(input, output, session) {
 		sample_table_content$chromatography_type[sample_table_content$chromatography_type == 1] <- "Liquid"
 		sample_table_content$chromatography_type[sample_table_content$chromatography_type == 2] <- "Gas"
 		output$uploaded_samples <- DT::renderDataTable({
-			DT::datatable(sample_table_content[, c(1, 7, 3, 5, 4, 6)])
+			DT::datatable(sample_table_content[, c(7, 3, 5, 4, 6)])
 		}, server = FALSE)
 		query <- stringr::str_glue("SELECT * FROM job ORDER BY start_time DESC;")
 		job_table_content <<- get_query(query)
@@ -508,7 +507,7 @@ server <- function(input, output, session) {
 	  # Checks if the user submitted a correct overarching name to the samples.
 	  if (nchar(input$sample_description) == 0){
 	    output$upl_completed <- renderText({
-	      "Please input your name."
+	      "Please input a valid Sample description"
 	    })
 	    return()
 	  }
@@ -888,14 +887,16 @@ server <- function(input, output, session) {
 	        sample_number <- sample_number + 1
 	      }
 	      shinyjs::alert(paste('Your job "', input$job_name, '" is running. Check progress in the "Jobs" tab.', sep = ""))
-	      if (input$debug == 0) {
-	        #future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = .packages(TRUE))
-	        future({xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 7)}, seed = NULL)
-	      }
-	      else {
-	        #metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #debug
-	        xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 7)
-	      }
+	      future({xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 7)}, seed = NULL)
+	      #xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 7)
+	      # if (input$debug == 0) {
+	      #   #future({metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd)}, seed = NULL)#, packages = .packages(TRUE))
+	      #   future({xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 7)}, seed = NULL)
+	      # }
+	      # else {
+	      #   #metaboanalyst_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd) #debug
+	      #   xcms_data_processing(jobfiles, params, preset, job_id, db_usr, db_pwd, 7)
+	      # }
 	      session$reload()
 	      updateTabsetPanel(session, "tabSwitch",
 	                        selected = "p3")
@@ -1021,7 +1022,26 @@ server <- function(input, output, session) {
 	  # dfpeaks[rownames(dfpeaks) %in% detected_mols_coeff$peak_id,"coeff_diff"] <- detected_mols_coeff$coeff_diff
 	  # Add sample name to dataframe
 	  dfpeaks$sample_name <- NULL
-	  
+	  # Order the dfpeaks according to original xmcs ordering
+	  dfpeaks <- dfpeaks[rownames(chromPeaks(xset)),]
+	  feature_mols <- data.frame(mol = NULL)
+	  # Add a compound to each feature
+	  for (feature in rownames(featureDefinitions(xset))) {
+	    # Retrieve peak ids for a feature
+	    dfpeaks <- dfpeaks[rownames(chromPeaks(xset)),]
+	    peakids_for_mols <- featureDefinitions(xset)[feature, "peakidx"][[1]]
+	    # Retrieve most frequent compound
+	    most_frequent <- names(which.max(table(na.omit(dfpeaks[peakids_for_mols,"mol_name_cosd"]))))
+	    # Replace NULL values by Unknown Compound
+	    if(is.null(most_frequent)) {
+	      most_frequent <- "Unknown Compound"
+	    }
+	    # Create a new dataframe from the most frequent compound
+	    add_frame <- data.frame(mol = most_frequent)
+	    rownames(add_frame) <- feature
+	    # Add the frame to the annotation frame
+	    feature_mols <- rbind(feature_mols, add_frame)
+	  }
 	  # Responsible for everything in the model when the user clicks a peak
 	  observeEvent(input$peaktable_rows_selected, {
 	    pspec <- detected_mols_cos[detected_mols_cos$peak_id == rownames(dfpeaks)[input$peaktable_rows_selected],"spectrum"]
@@ -1038,7 +1058,7 @@ server <- function(input, output, session) {
 	          ints <- c(ints, as.double(strsplit(section, ":")[[1]][2]))
 	        }
 	        pspec <- data.frame(mzs, ints)
-	        colnames(pspec) <- c("Intensity (relative to highest peak)", "Mass (m/z)")
+	        colnames(pspec) <- c("Mass (m/z)", "Intensity (relative to highest peak)")
 	        # Allows for downloadign the spectrum to a .txt file.
 	        output$download_spectr <- downloadHandler(
 	          filename = function(){"spectrum.txt"}, 
@@ -1053,24 +1073,29 @@ server <- function(input, output, session) {
 	              plot(pspec, type = 'h')
 	              text(x = pspec[pspec[,2] > 10,1], y = pspec[pspec[,2] > 10,2] + 1, round(pspec[pspec[,2] > 10,1], 3), col = 'blue')
 	            }),
+	            # Add button to download spectrum
 	            downloadButton('download_spectr', "Download spectrum [mz]:[intensity]")
 	          ), easyClose = TRUE
 	        ))
 	      }
 	    }
 	  })
+	  # Add file name to datatable
 	  for (sample_index in 1:length(selection$original_file_name)) {
 	    dfpeaks[dfpeaks[,"sample"] == sample_index,"sample_name"] <- selection$original_file_name[sample_index]
 	  }
+	  # Render peak table
 	  output$peaktable <- DT::renderDataTable({
 	    DT::datatable(dfpeaks, extensions = "Buttons", selection = 'single',
 	                  rownames= TRUE, options = list(scrollX = TRUE, autoWidth = TRUE, dom = 'Bfrtip',
 	                                                 buttons = c('csv')))
 	  }, server = FALSE)
 	  
+	  # Needed in order to render parameters at bottom of page
 	  observeEvent(input$Ref_methodA, ignoreInit =  T, {
 	    ref_options <- c(default_mnp, default_fi)[is.na(input$Ref_methodA) + 1]
 	  })
+	  # Peak refinement
 	  if (is.null(input$Ref_methodA)){
 	    if (used_parameters$Ref_method == 0) {
 	      ref_options <- tagList(
@@ -1099,7 +1124,7 @@ server <- function(input, output, session) {
 	    }
 	  }
 	  
-	  
+	  # Peak alignment
 	  observeEvent(input$Align_methodA, ignoreInit =  T, {
 	    aln_options <- c(default_obiwarp, default_peakgroups)[is.na(input$Align_methodA) + 1]
 	  })
@@ -1164,7 +1189,7 @@ server <- function(input, output, session) {
 	      )
 	    }
 	  }
-	  
+	  # Peak grouing
 	  observeEvent(input$Group_methodA, ignoreInit =  T, {
 	    grp_options <- c(default_pd, default_mzc, default_np)[is.na(input$Group_methodA) + 1]
 	  })
@@ -1245,6 +1270,7 @@ server <- function(input, output, session) {
   			         ),
   			fluidRow(style='max-width:100%;padding:10px;',
   			         column(6,
+  			                # Render stacked bar plot of detected compounds
   			                # renderPlotly({
   			                #   stacked_mols <- plot_ly(x = NULL, y = NULL, type = 'bar', name = 'SF Zoo')
   			                #   for (sample in 1:length(unique(chromPeaks(xset)[,"sample"]))) {
@@ -1267,11 +1293,10 @@ server <- function(input, output, session) {
   			         column(6,
   			                renderPlotly({
   			                  # Take the log2 of the feature values
-  			                  ft_fv <- log2(featureValues(xset, filled = TRUE))
+  			                  #ft_fv <- na.omit(log2(featureValues(xset, filled = TRUE)))
   			                  # Normalize the dataset using scale
-  			                  ft_fv <- scale(featureValues(xset), scale = TRUE)
+  			                  ft_fv <- scale(featureValues(xset, filled = TRUE), scale = TRUE)
   			                  pc <- prcomp(t(na.omit(ft_fv)), center = TRUE)
-  			                  print(pc)
   			                  pca <- plot_ly(x = NULL, y = NULL, type = "scatter") %>% layout(title  = "PCA", scene = list(xaxis = list(title = "PC1"), yaxis = list(title = "PC2")))
   			                  #hashes <- substr(names(pc$x[,1]), 0, 56)
   			                  meta_selection <- selection$metadata
@@ -1282,6 +1307,7 @@ server <- function(input, output, session) {
   			                })
   			         ),
   			         column(6,
+  			                # TIC plot and detected peaks
   			                numericInput("sample_nr_peaks", label = "Select a sample to view its detected peaks.", min = 1, max = nrow(selection), value = 1),
   			                renderPlotly({
   			                  chrom <- plot_ly(x = NULL, y = NULL, type = 'scatter', mode = 'markers') %>% layout(title = "Peaks over TIC", xaxis = list(title = "Retention time (seconds)"), yaxis = list(title = "TotIonCurrent"))
@@ -1313,9 +1339,11 @@ server <- function(input, output, session) {
   			),
   			fluidRow(style='max-width:100%;padding:10px;',
   			         column(6,
+  			                # Potential future addition
   			                uiOutput("analysisCompounds")
   			         ),
   			         column(6,
+  			                # Potetial future addition
   			                uiOutput("analysisDifferential")
   			         )
   			),
@@ -1341,17 +1369,20 @@ server <- function(input, output, session) {
   			                  heatframe <- heatframe[!is.infinite(rowSums(heatframe)),]
   			                  # heatframe <- heatframe[rownames(heatframe) != "Unknown Compound",]
   			                  heatframe <<- heatframe[,sort(colnames(heatframe))]
+  			                  # Allows for dataframe export to .csv
   			                  output$download_featvals <- downloadHandler(
   			                    filename = paste("featureValues", job_id, ".csv", sep = ""),
   			                    content = function(file) {
-  			                      write.csv(heatframe, file, row.names = TRUE)
+  			                      write.csv(cbind(heatframe, feature_mols), file, row.names = TRUE)
   			                    }
   			                  )
   			                  heatmaply(heatframe, xlab = "Samples", ylab = "Features", main = "Clustered heatmap of features between samples")
   			                }),
+  			                # Rendering of download button
   			                downloadButton("download_featvals", "Download feature values")
   			         )
   			),
+	      # Creation of correlation matrix and heatmap between features
 	      fluidRow(style='max-width:100%;padding:10px;font-size:75%;', column(12, 
 	                                                                          renderUI({
 	                                                                            selection$metadata %in% input$matrixselect
@@ -1359,29 +1390,35 @@ server <- function(input, output, session) {
 	                                                                          })
 	                                                                          )),
   	    fluidRow(style='max-width:100%;padding:10px;font-size:75%;',
-  	             column(6, 
+  	             column(6,
+  	                    # Rendering of peak table
   	                    p("Detected peak specifics:"),
   	                    DTOutput('peaktable')
   	             ),
   	             column(6,
+  	                    # Rendering of feature table
   	                    p("Detected features:"),
   	                    div(DT::renderDataTable({
-  	                      DT::datatable(as.data.frame(featureDefinitions(xset)), extensions = "Buttons", selection = 'none',
+  	                      DT::datatable(as.data.frame(cbind(featureDefinitions(xset), feature_mols)), extensions = "Buttons", selection = 'none',
   	                                    rownames= TRUE, options = list(scrollX = TRUE, autoWidth = TRUE, dom = 'Bfrtip',
   	                                                                   buttons = c('csv')))
   	                    }, server = FALSE))
   	             )
   	    ),
+	      # Row with the utilized parameters and rerun buttons
   	    fluidRow(style='max-width:100%;padding:10px;',
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
+  	                    # Peak detection
   	                    h5("1. Detection"),
   	                    selectInput("Peak_methodA", label = "Peak detection method", choices = list("centWave" = 0, "Massifquant" = 1, "MatchedFilter" = 2, "relsqdiff" = 3), selected = used_parameters$Peak_method),
                       renderUI({
+                        # Choose utilized method to render correct parameters
                         observeEvent(input$Peak_methodA, ignoreInit =  F, {
                           peak_options <- c(default_cent, default_massif, default_matchedfilter, default_relsqdiff)[is.na(input$Peak_methodA) + 1]
                         })
+                        # Render parameters with utilized values
                         if (is.null(input$Peak_methodA)) {
                           if (used_parameters$Peak_method == 0) {
                             peak_options <- tagList(
@@ -1502,24 +1539,28 @@ server <- function(input, output, session) {
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("2. Refinement"),
+  	                    # Render utilized refinement options
   	                    selectInput("Ref_methodA", label = "Peak refinement method", choices = list("MergeNeighboringPeaks" = 0, "FilterIntensity" = 1), selected = used_parameters$Ref_method),
   	                    renderUI(ref_options),
   	                    actionButton("resub2", label = "\n Rerun")
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("3. Alignment"),
+  	                    # Render utilized alignment options
   	                    selectInput("Align_methodA", label = "Peak alignment method", choices = list("Obiwarp" = 0, "PeakGroups" = 1), selected = used_parameters$Align_method),
   	                    renderUI(aln_options),
   	                    actionButton("resub3", label = "\n Rerun")
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("4. Grouping"),
+  	                    # Render utilized grouping options
   	                    selectInput("Group_methodA", label = "Peak grouping method", choices = list("PeakDensity" = 0, "MzClust" = 1, "NearestPeaks" = 2), selected = used_parameters$Group_method),
   	                    renderUI(grp_options),
   	                    actionButton("resub4", label = "\n Rerun")
   	             ),
   	             column(2, style='margin-bottom:30px;border-left:1px solid #dfd7ca;; padding: 10px;',
   	                    h5("5. Filling"),
+  	                    # Render utilized filling options
   	                    # numericInput("expandMzA", label = "expandMz", 0, value = used_parameters$expandMz),
   	                    # numericInput("expandRtA", label = "expandRt", 0, value = used_parameters$expandRt),
   	                    numericInput("fixedMzA", label = "fixedMz", 0, value = used_parameters$fixedMz),
@@ -1528,28 +1569,18 @@ server <- function(input, output, session) {
   	             )
   	    )
 	  ))
+	  # Insert analysis taglist to the front end
 	  output$job_analysis <- analysisTL
 	})
 	
-  mass_data_annotation <- function(){
-    #SPLASH FUTURE
-  }
-  
-  mass_data_visualisation <- function(){
-    
-  }
-  
 	#################
 	###########       ASYNC FUNCTIONS
 	# VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
 	#Function to process the selected MS-files
-  xcms_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pw, job_plan){ #https://cran.r-project.org/web/packages/future.batchtools/future.batchtools.pdf
+  xcms_data_processing <- function(massfiles, parameters, preset, job_id, db_usr, db_pw, job_plan){
     library(xcms)
     register(bpstart(MulticoreParam(8)))
-    #parameters[] <- lapply(parameters, function(x) as.double(as.numeric(x)))
-    # query <- stringr::str_glue("SELECT * FROM parameter WHERE job_id = '", job_id, "';")
-    # def_params <- get_query(query)
-    #####################
+    ##################### Import RMySQL query functions
     send_query <- function(query){
       sqlconn <- dbConnect(
         drv = RMySQL::MySQL(),
@@ -1592,6 +1623,7 @@ server <- function(input, output, session) {
         def_params <- parameters
         files <- massfiles$file_path
         if (preset == 3) {
+          # optiLCMS Parameter optimization (depricated)
           param_initial <- SetPeakParam(platform = "general")
           jstep <- 1
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '1/9 Performing ROI extraction...' WHERE job_id = ", job_id, ";", sep = "")))
@@ -1603,32 +1635,32 @@ server <- function(input, output, session) {
         }
         else {
           def_params[is.na(def_params)] <- 0
-          # def_params <- SetPeakParam(Peak_method = parameters$Peak_method, RT_method = parameters$RT_method, mzdiff = as.double(parameters$mzdiff), snthresh = as.double(parameters$snthresh), bw = as.double(parameters$bw), ppm = as.double(parameters$ppm), min_peakwidth = as.double(parameters$min_peakwidth), max_peakwidth = as.double(parameters$max_peakwidth), noise = as.double(parameters$noise), prefilter = as.double(parameters$prefilter), value_of_prefilter = as.double(parameters$value_of_prefilter), minFraction = as.double(parameters$minFraction), minSamples = as.double(parameters$minSamples), maxFeatures = as.double(parameters$maxFeatures), mzCenterFun = parameters$mzCenterFun, integrate = as.double(parameters$integrate), extra = as.double(parameters$extra), span = as.double(parameters$span), smooth = parameters$smooth, family = parameters$family, fitgauss = as.logical(parameters$fitgauss), polarity = parameters$polarity, perc_fwhm = as.double(parameters$perc_fwhm), mz_abs_iso = as.double(parameters$mz_abs_iso), max_charge = as.double(parameters$max_charge), max_iso = as.double(parameters$max_iso), corr_eic_th = as.double(parameters$corr_eic_th), mz_abs_add = as.double(parameters$mz_abs_add), rmConts = parameters$rmConts) #verboseColumns
-          #def_params <- parameters
         }
-        #processing
+        # Processing pipeline
         dir <- getwd()
         dir <- paste(dir, "/processed_data", sep = "")
         if (job_plan == 7){
           jstep <- 3
-          #range meegeven
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '3/9 Reading MS data...' WHERE job_id = ", job_id, ";", sep = "")))
-          #Load raw files into XCMSnExp-object
+          # Load raw files into XCMSnExp-object
           pd <- data.frame(sample_name = massfiles$original_file_name,
                            sample_group = massfiles$metadata,
                            stringsAsFactors = FALSE)
           xset <- readMSData(files = files, pdata = new("NAnnotatedDataFrame", pd), mode = "onDisk")
+          # Select user-specified RT-range
           xset <- filterRt(xset, c(as.double(def_params$rtrmin), as.double(def_params$rtrmax)))
         } else {
+          # Whenever the job is rerun, choose previously initialized xset
           rdaquer <- stringr::str_glue(paste("SELECT * FROM processed_sample WHERE job_id = ", job_id, ";", sep = ""))
           rda_path <- get_query(rdaquer)
           load(file=toString(rda_path$file_path_rda))
         }
         if (job_plan == 2 | job_plan == 7){
+          # Functions utilized for peak detection
           jstep <- 4
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '4/9 Finding peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           
-          #Find peaks
+          # centWave
           if (as.integer(def_params$Peak_method) == 0){
             peak_params <- CentWaveParam(
               ppm = as.double(def_params$ppm),
@@ -1647,6 +1679,7 @@ server <- function(input, output, session) {
               #extendLengthMSW = FALSE
             )
           }
+          # Massifquant
           else if (as.integer(def_params$Peak_method) == 1){
             peak_params <- MassifquantParam(
               ppm = as.double(def_params$ppm),
@@ -1666,6 +1699,7 @@ server <- function(input, output, session) {
               withWave = as.logical(def_params$withWave)
             )
           }
+          # MatchedFilter
           else if (as.integer(def_params$Peak_method) == 2){
             peak_params <- MatchedFilterParam(
               binSize = as.double(def_params$binSize),
@@ -1683,7 +1717,7 @@ server <- function(input, output, session) {
           }
           ## New method for peak detection, square difference
           else if (as.integer(def_params$Peak_method) == 3){
-            def_params$ppm <- 40 # Necessary for other steps!
+            def_params$ppm <- 40 # Necessary for other steps! Does not utilize ppm
             xset <- as(xset, "XCMSnExp")
             for (sampleN in 1:length(files)) {
               raw_data <- readMSData(files = files[sampleN], pdata = new("NAnnotatedDataFrame"), mode = "onDisk")
@@ -1695,7 +1729,7 @@ server <- function(input, output, session) {
               # Create a local linear regression using supsmu
               trend <- supsmu(rtime(raw_data), diffalt, bass = -100)
               # Calculation of threshold based on a local regression model
-              trend$y <- trend$y - mean(diffalt) / 5
+              trend$y <- trend$y - mean(diffalt) / as.double(def_params$rsd_threshold)
               newvals <- tic(raw_data)
               # Remove scans below threshold
               newvals[diffalt < trend$y] <- NA
@@ -1767,18 +1801,21 @@ server <- function(input, output, session) {
             return()
           }
           if (as.integer(def_params$Peak_method) != 3){
+            # Perform peak detection with xcms-methods
             print(peak_params)
             xset <-findChromPeaks(xset, param = peak_params)
           }
         }
         if (job_plan %in% c(2, 3) | job_plan == 7){
+          # Functions utilized for peak refinement
           jstep <- 5
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '5/9 Refining peaks...' WHERE job_id = ", job_id, ";", sep = "")))
-          #Peak refinement
+          # When optimization was chosen, utilize Merge Neighboring Peaks
           if (preset == 3) {
             refmeth <- MergeNeighboringPeaksParam()
           }
             else {
+              # MergeNeighboringPeaks
             if (as.integer(def_params$Ref_method) == 0){
                 refmeth <- MergeNeighboringPeaksParam(
                                                   expandRt = as.double(def_params$expandRt),
@@ -1788,7 +1825,7 @@ server <- function(input, output, session) {
                                                   )
               }
             else if (as.integer(def_params$Ref_method) == 1) {
-            # cpp <- CleanPeaksParam()
+              # FilterIntensity
               refmeth <-  FilterIntensityParam(
                   threshold = as.double(def_params$threshold),
                   nValues = 1L,
@@ -1797,16 +1834,18 @@ server <- function(input, output, session) {
             }
             }
           print(refmeth)
+          # Perform peak refinement
           xset <- refineChromPeaks(xset, refmeth)
         }
         if (job_plan %in% c(2,3,4) | job_plan == 7){
+          # Functions for peak alignment
           jstep <- 6
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '6/9 Aligning peaks...' WHERE job_id = ", job_id, ";", sep = "")))
-          #Peak alignment
           if (preset == 3) {
             align_param <- ObiwarpParam()
           }
           else {
+            # Obiwarp
             if (as.integer(def_params$Align_method) == 0){
               align_param <- ObiwarpParam(
                 binSize = as.double(def_params$binSize),
@@ -1823,6 +1862,7 @@ server <- function(input, output, session) {
                 subsetAdjust = c("average", "previous")[as.integer(def_params$subsetAdjust) + 1]
               )
             }
+            # PeakGroups
             else if (as.integer(def_params$Align_method) == 1){
               align_param <- PeakGroupsParam(
                 minFraction = as.double(def_params$minFraction),
@@ -1837,15 +1877,18 @@ server <- function(input, output, session) {
             }
           }
           print(align_param)
+          # Perform peak alignment
           xset <- adjustRtime(xset, param = align_param)
         }
         if (job_plan %in% c(2,3,4,5) | job_plan == 7){
+          #Perform peak grouping
           jstep <- 7
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '7/9 Grouping peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           if (preset == 3) {
             peak_group_param <- PeakDensityParam()
           }
           else {
+            # PeakDensity
             if (as.integer(def_params$Group_method) == 0){
               peak_group_param <- PeakDensityParam(
                 sampleGroups = massfiles$metadata,
@@ -1856,6 +1899,7 @@ server <- function(input, output, session) {
                 maxFeatures = as.double(def_params$maxFeatures)
               )
             }
+            # MzClust
             else if (as.integer(def_params$Group_method) == 1){
               peak_group_param <- MzClustParam(
                 sampleGroups = massfiles$metadata,
@@ -1865,6 +1909,7 @@ server <- function(input, output, session) {
                 minSamples = as.double(def_params$minSamples)
               )
             }
+            # NearestPeaks
             else if (as.integer(def_params$Group_method) == 2){
               peak_group_param <- NearestPeaksParam(
                 sampleGroups = massfiles$metadata,
@@ -1876,9 +1921,11 @@ server <- function(input, output, session) {
             }
           }
           print(peak_group_param)
+          # Perform peak grouping
           xset <- groupChromPeaks(xset, param = peak_group_param)
         }
         if (job_plan %in% c(2,3,4,5,6) | job_plan == 7){
+          # Peak filling functions
           jstep <- 8
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '8/9 Filling peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           # fillparam <- ChromPeakAreaParam(
@@ -1890,6 +1937,7 @@ server <- function(input, output, session) {
           if (preset == 3) {
             fillparam <- FillChromPeaksParam()
           }
+          # FillChromPeaks
           else {
             fillparam <- FillChromPeaksParam(
               expandMz = as.double(def_params$expandMz),
@@ -1900,10 +1948,13 @@ server <- function(input, output, session) {
             )
           }
           print(fillparam)
+          # Perform peak filling
           xset <- fillChromPeaks(xset, param = fillparam)
+          # Save xset to .rda for further alterations and actions
           save(xset, file = paste(dir, "/", job_id, ".rda", sep = ""))
         }
         if (job_plan %in% c(2,3,4,5,6) | job_plan == 7){
+          # Functions for peak annotations
           jstep <- 9
           send_query(stringr::str_glue(paste("UPDATE job SET job_status = '9/9 Annotating peaks...' WHERE job_id = ", job_id, ";", sep = "")))
           # Remove previous annotation for same job, necessary for reruns.
@@ -1977,6 +2028,14 @@ server <- function(input, output, session) {
                     # minlength <- min(nrow(scan1), nrow(scan2))
                     x <- ((scan1[,2] / max(scan1[,2])) * 100)
                     y <- ((scan2[,2] / max(scan2[,2])) * 100)
+                    # scan1in2 <- round(scan1[,1]) %in% scan2[,1]
+                    # scan2in1 <- scan2[,1] %in% round(scan1[,1])
+                    # print(scan1)
+                    # print(scan2)
+                    # print(scan1in2)
+                    # print(scan2in1)
+                    # print(length(scan1in2))
+                    # print(length(scan2in1))
                     # This will align the relative abundances of m/z bins by
                     # maximum value, which is always 100.
                     # Example:
@@ -2001,6 +2060,9 @@ server <- function(input, output, session) {
                       # + 1 to remove 0 values and keep ratio's similar
                       x <- x + 1
                       y <- y + 1
+                      # Keep only similar mz values between spectra
+                      # x <- x[scan1in2]
+                      # y <- x[scan2in1]
                       # Calculate the cosine similarity between peak and compound
                       sim <- 999*(sum(sqrt(x) * sqrt(y))^2)/(sum(x)*sum(y))
                     }
@@ -2079,7 +2141,7 @@ server <- function(input, output, session) {
                                                    chromaa[peak,"rtmax"], ", ", #rtmax
                                                    apex[,"totIonCurrent"], ", '", #apex_tic
                                                    splash, "', '", #splash key
-                                                   spectrum_formatted, "'",
+                                                   spectrum_formatted, "'", #spectrum
                                                    ");", sep = "")))
               }
             }
@@ -2092,13 +2154,16 @@ server <- function(input, output, session) {
             file_path_rda = toString(paste(dir, "/", job_id, ".rda", sep = "")),
             file_path_peaks = toString(paste(dir, "/", job_id, "_annot.rda", sep = ""))
           )
+          # Insert processed job to DB
           insert_query("processed_sample", todf)
         }
+        # Retrieve end time of job.
         end_time <- format(Sys.time() + 60*60, "%Y-%m-%d %X")
         send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'Finished' WHERE job_id = ", job_id, ";", sep = "")))
         send_query(stringr::str_glue(paste("UPDATE job SET end_time = '", end_time, "' WHERE job_id = ", job_id, ";", sep = "")))
       },
       error = function(cnd){
+        # Catch errors and set status to "CRASHED"
         print(cnd)
         send_query(stringr::str_glue(paste("UPDATE job SET job_status = 'CRASHED AT ", jstep, "/9', end_time = '", format(Sys.time() + 60*60, "%Y-%m-%d %X"), "' WHERE job_id = ", job_id, ";", sep = "")))
         return(NA)
